@@ -19,7 +19,7 @@ export function CardView({ card, width, enabled, dimmed, onPress, highlight }: P
       onPress={onPress}
       accessibilityLabel={card}
       testID={`card-${card}`}
-      style={({ pressed }) => [styles.shadow, { opacity: dimmed ? 0.5 : 1 }, pressed && { transform: [{ translateY: -6 }] }]}
+      style={({ pressed }) => [styles.shadow, { opacity: dimmed ? 0.6 : 1 }, pressed && { transform: [{ translateY: -6 }] }]}
     >
       <CardFace card={card} width={width} highlight={highlight} />
     </Pressable>
