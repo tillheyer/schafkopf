@@ -37,11 +37,17 @@ export interface GameState {
   current: Trick | null;
   result: GameResult | null;
   tarif?: Tarif;
+  /** Wer Kontra gegeben hat (Gegenpartei), sonst null. */
+  kontra?: number | null;
+  /** Wer Re gegeben hat (Spielerpartei), sonst null. */
+  re?: number | null;
 }
 
 export type Action =
   | { type: 'bid'; player: number; contract: Contract | null }
-  | { type: 'play'; player: number; card: CardId };
+  | { type: 'play'; player: number; card: CardId }
+  | { type: 'kontra'; player: number }
+  | { type: 're'; player: number };
 
 export const next = (p: number): number => (p + 1) % 4;
 export const forehand = (s: GameState): number => next(s.dealer);
@@ -63,6 +69,8 @@ export function newGame(dealer: number, rng: Rng, tarif?: Tarif): GameState {
     current: null,
     result: null,
     tarif,
+    kontra: null,
+    re: null,
   };
 }
 
@@ -154,9 +162,50 @@ export function legalCards(s: GameState, player: number): CardId[] {
   return [...hand];
 }
 
+// ---------------------------------------------------------------- Kontra und Re
+
+/** Spielerpartei (im Sauspiel Spieler + Sau-Besitzer). */
+export function declarerTeam(s: GameState): number[] {
+  if (s.declarer === null) return [];
+  return s.partner === null ? [s.declarer] : [s.declarer, s.partner];
+}
+
+/** Hat der Spieler schon eine Karte gespielt? */
+function hasPlayed(s: GameState, p: number): boolean {
+  if (s.tricks.length > 0) return true;
+  const t = s.current;
+  if (!t) return false;
+  return (p - t.leader + 4) % 4 < t.cards.length;
+}
+
+/**
+ * ANNAHME: Kontra darf jeder aus der Gegenpartei geben, solange er selbst noch
+ * keine Karte zugegeben hat. Re darf die Spielerpartei nach einem Kontra geben,
+ * solange der erste Stich läuft. Jedes verdoppelt den Spielwert.
+ */
+export function canKontra(s: GameState, p: number): boolean {
+  if (s.phase !== 'playing' || s.declarer === null || (s.kontra ?? null) !== null) return false;
+  if (p === s.declarer || p === s.partner) return false;
+  return !hasPlayed(s, p);
+}
+
+export function canRe(s: GameState, p: number): boolean {
+  if (s.phase !== 'playing' || (s.kontra ?? null) === null || (s.re ?? null) !== null) return false;
+  if (p !== s.declarer && p !== s.partner) return false;
+  return s.tricks.length === 0;
+}
+
 // ---------------------------------------------------------------- Reducer
 
 export function applyAction(s: GameState, a: Action): GameState {
+  if (a.type === 'kontra') {
+    if (!canKontra(s, a.player)) throw new Error('Kontra ist jetzt nicht möglich');
+    return { ...s, kontra: a.player };
+  }
+  if (a.type === 're') {
+    if (!canRe(s, a.player)) throw new Error('Re ist jetzt nicht möglich');
+    return { ...s, re: a.player };
+  }
   if (a.player !== s.turn) throw new Error(`Spieler ${a.player} ist nicht dran`);
   if (a.type === 'bid') return applyBid(s, a.contract);
   return applyPlay(s, a.card);
@@ -215,6 +264,8 @@ function applyPlay(s: GameState, card: CardId): GameState {
     declarerTricks: won.length,
     initialHands: s.initialHands,
     tarif: s.tarif,
+    kontra: (s.kontra ?? null) !== null,
+    re: (s.re ?? null) !== null,
   });
   return { ...st, phase: 'finished', current: null, result };
 }

@@ -1,6 +1,6 @@
 import { CardId, pointsOf, rankOf, suitOf, sumPoints, Suit } from './cards';
 import { Contract, contractRank, effectiveSuit, isTrump, trickWinnerIndex, trumpPower } from './rules';
-import { Action, GameState, callableSuits, calledAcePlayed, highestBid, legalBids, legalCards, sauGesucht } from './game';
+import { Action, GameState, callableSuits, calledAcePlayed, canKontra, canRe, highestBid, legalBids, legalCards, sauGesucht } from './game';
 
 /**
  * Einfache regelbasierte Computergegner. Sie nutzen nur Wissen, das ein echter
@@ -8,7 +8,40 @@ import { Action, GameState, callableSuits, calledAcePlayed, highestBid, legalBid
  */
 export function chooseAction(s: GameState, player: number): Action {
   if (s.phase === 'bidding') return { type: 'bid', player, contract: chooseBid(s, player) };
+  if (canKontra(s, player) && wantsKontra(s, player)) return { type: 'kontra', player };
+  if (canRe(s, player) && wantsRe(s, player)) return { type: 're', player };
   return { type: 'play', player, card: chooseCard(s, player) };
+}
+
+// ---------------------------------------------------------------- Kontra und Re
+
+function handStats(s: GameState, player: number) {
+  const c = s.contract!;
+  const hand = s.initialHands[player].length ? s.initialHands[player] : s.hands[player];
+  return {
+    trumps: hand.filter((x) => isTrump(x, c)).length,
+    obers: hand.filter((x) => rankOf(x) === 'O').length,
+    unters: hand.filter((x) => rankOf(x) === 'U').length,
+    aces: hand.filter((x) => rankOf(x) === 'A' && !isTrump(x, c)).length,
+  };
+}
+
+/** Gegenspieler mit sehr gutem Blatt geben Kontra. */
+function wantsKontra(s: GameState, player: number): boolean {
+  const k = s.contract!.kind;
+  const h = handStats(s, player);
+  if (k === 'sauspiel') return (h.trumps >= 5 && h.obers >= 2) || h.trumps >= 6;
+  if (k === 'wenz') return h.unters >= 2 && h.aces >= 3;
+  return h.trumps >= 4 && h.obers >= 3;
+}
+
+/** Die Spielerpartei antwortet mit Re, wenn sie sich sehr sicher ist. */
+function wantsRe(s: GameState, player: number): boolean {
+  const k = s.contract!.kind;
+  const h = handStats(s, player);
+  if (k === 'sauspiel') return h.trumps >= 6 || (h.trumps >= 5 && h.obers >= 3);
+  if (k === 'wenz') return h.unters >= 3 && h.aces >= 3;
+  return h.trumps >= 7;
 }
 
 // ---------------------------------------------------------------- Reizen
