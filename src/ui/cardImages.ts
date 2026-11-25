@@ -25,6 +25,7 @@ export const CARD_IMAGES: Partial<Record<CardId, ImageSourcePropType>> = {
   H10: require('../../assets/cards/H10.webp'),
   H7: require('../../assets/cards/H7.webp'),
   H8: require('../../assets/cards/H8.webp'),
+  H9: require('../../assets/cards/H9.webp'),
   HA: require('../../assets/cards/HA.webp'),
   HK: require('../../assets/cards/HK.webp'),
   HO: require('../../assets/cards/HO.webp'),
