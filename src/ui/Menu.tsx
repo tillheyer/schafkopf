@@ -17,7 +17,7 @@ export function Menu({ name, setName, initialCode, onChoose }: {
   const codeOk = /^[A-Z0-9]{4}$/.test(code);
 
   return (
-    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root}>
+    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root} imageStyle={styles.bgImage}>
       <View style={styles.fan}>
         {(['GU', 'EO', 'HA', 'SO'] as const).map((c, i) => (
           <View key={c} style={{ transform: [{ rotate: `${(i - 1.5) * 12}deg` }, { translateY: Math.abs(i - 1.5) * 6 }], marginHorizontal: -10 }}>
@@ -80,7 +80,8 @@ export function Menu({ name, setName, initialCode, onChoose }: {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#2a1810' },
+  bgImage: { width: '100%', height: '100%' },
+  root: { overflow: 'hidden',  flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#2a1810' },
   fan: { flexDirection: 'row', marginBottom: 18 },
   title: { color: COLORS.accent, fontSize: 40, fontWeight: '800', fontFamily: 'Georgia, serif', textShadowColor: '#000', textShadowRadius: 6 },
   sub: { color: COLORS.muted, marginBottom: 24 },
