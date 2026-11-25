@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ClientMsg, ServerMsg } from '../src/net/protocol';
 import { Room, makeCode } from './rooms';
+import { normalizeRules } from '../src/engine/options';
 
 /** Online-Server für Schafkopf: WebSocket, Tische mit 4-stelligem Code. */
 const PORT = Number(process.env.PORT ?? 8787);
@@ -42,7 +43,7 @@ wss.on('connection', (ws: WebSocket) => {
       case 'create': {
         if (room) return;
         const code = makeCode((c) => rooms.has(c));
-        const r = new Room(code);
+        const r = new Room(code, normalizeRules(msg.rules));
         rooms.set(code, r);
         return sit(r, String(msg.name ?? ''));
       }

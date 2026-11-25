@@ -6,9 +6,11 @@ import {
   Contract,
   GameState,
   Trick,
+  canAnswerHochzeit,
   canKontra,
   canRe,
   contractName,
+  isTout,
   legalBids,
   legalCards,
   suitOf,
@@ -53,10 +55,7 @@ function sortHand(hand: CardId[], c: Contract): CardId[] {
 }
 
 export function bidLabel(b: Contract | null): string {
-  if (!b) return 'Weiter';
-  if (b.kind === 'sauspiel') return `Sauspiel auf die ${SUIT_NAMES[b.suit]}-Sau`;
-  if (b.kind === 'wenz') return 'Wenz';
-  return `${SUIT_NAMES[b.suit]}-Solo`;
+  return b ? contractName(b) : 'Weiter';
 }
 
 /** Kurze Beschriftung für die Ansage-Knöpfe. */
@@ -69,8 +68,8 @@ function shortBid(b: Contract | null): string {
 function bidSpeech(b: Contract | null): string {
   if (!b) return 'Weiter';
   if (b.kind === 'sauspiel') return `Ich spiel auf die ${SUIT_NAMES[b.suit]}-Sau`;
-  if (b.kind === 'wenz') return 'Wenz!';
-  return `${SUIT_NAMES[b.suit]}-Solo!`;
+  if (b.kind === 'hochzeit') return 'Ich hätt a Hochzeit!';
+  return `${contractName(b)}!`;
 }
 
 const BUBBLE_MS = 2800;
@@ -83,7 +82,7 @@ function useBubbles(game: GameState, gameNo: number): (string | null)[] {
   const [, setTick] = useState(0);
   const flashes = useRef<{ player: number; text: string; until: number }[]>([]);
   const bidsUntil = useRef(0);
-  const prev = useRef({ gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null });
+  const prev = useRef({ gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null, turn: game.turn });
 
   useEffect(() => {
     const p = prev.current;
@@ -97,14 +96,22 @@ function useBubbles(game: GameState, gameNo: number): (string | null)[] {
       const r = game.re ?? null;
       if (k !== null && p.kontra === null) flashes.current.push({ player: k, text: 'Kontra!', until: now + BUBBLE_MS + 400 });
       if (r !== null && p.re === null) flashes.current.push({ player: r, text: 'Re!', until: now + BUBBLE_MS + 400 });
+      // Hochzeit: wer ablehnt, sagt "Na", wer annimmt, "I nimm's!".
+      if (p.phase === 'hochzeit') {
+        if (game.phase === 'playing' && game.partner !== null) {
+          flashes.current.push({ player: game.partner, text: 'I nimm’s!', until: now + BUBBLE_MS });
+        } else if (p.turn !== game.turn || game.phase !== 'hochzeit') {
+          flashes.current.push({ player: p.turn, text: 'Na, danke', until: now + BUBBLE_MS });
+        }
+      }
     }
-    prev.current = { gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null };
+    prev.current = { gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null, turn: game.turn };
     const ends = [bidsUntil.current, ...flashes.current.map((f) => f.until)].filter((t) => t > now);
     setTick((t) => t + 1);
     if (!ends.length) return;
     const t = setTimeout(() => setTick((x) => x + 1), Math.min(...ends) - now + 20);
     return () => clearTimeout(t);
-  }, [gameNo, game.phase, game.kontra, game.re]);
+  }, [gameNo, game.phase, game.kontra, game.re, game.turn]);
 
   const now = Date.now();
   const out: (string | null)[] = [null, null, null, null];
@@ -159,6 +166,7 @@ export function GameTable(props: GameTableProps) {
   const handN = Math.max(1, hand.length);
   const overlap = Math.max(0, Math.ceil((handN * handW - handAvail) / Math.max(1, handN - 1)));
   const myTurn = game.turn === me && game.phase !== 'finished';
+  const answeringHochzeit = canAnswerHochzeit(game, me);
 
   const tableTrick: Trick | null =
     showLast && game.tricks.length ? game.tricks[game.tricks.length - 1] : shownTrick ?? game.current;
@@ -167,6 +175,10 @@ export function GameTable(props: GameTableProps) {
     if (game.phase === 'bidding') {
       return myTurn ? 'Du bist dran: Was spielst du?' : `${names[game.turn]} überlegt …`;
     }
+    if (game.phase === 'hochzeit') {
+      if (answeringHochzeit) return `Nimmst du ${names[game.declarer!]}s Hochzeit? Tippe die Karte an, die du dafür abgibst.`;
+      return `${names[game.turn]} überlegt, ob ${game.turn === me ? 'du' : 'er/sie'} die Hochzeit nimmt …`;
+    }
     if (game.phase === 'playing') {
       if (shownTrick) return `${who(shownTrick.winner!)} ${verb(shownTrick.winner!, 'machst', 'macht')} den Stich`;
       return myTurn ? 'Du bist dran' : `${names[game.turn]} ist dran`;
@@ -174,11 +186,18 @@ export function GameTable(props: GameTableProps) {
     return '';
   })();
 
-  const doubles = `${(game.kontra ?? null) !== null ? ' · Kontra' : ''}${(game.re ?? null) !== null ? ' · Re' : ''}`;
-  const announcement =
-    game.contract && game.declarer !== null
-      ? `${who(game.declarer)} ${verb(game.declarer, 'spielst', 'spielt')} ${contractName(game.contract)}${doubles}`
-      : `Spiel ${gameNo} · ${who(game.dealer)} ${verb(game.dealer, 'gibst', 'gibt')}`;
+  const bock = (game.bock ?? 1) > 1 ? ` · Bock ×${game.bock}` : '';
+  const doubles = `${(game.kontra ?? null) !== null ? ' · Kontra' : ''}${(game.re ?? null) !== null ? ' · Re' : ''}${bock}`;
+  const announcement = (() => {
+    const c = game.contract;
+    if (c?.kind === 'ramsch') return `Ramsch: wer die meisten Augen hat, verliert${bock}`;
+    if (c?.kind === 'hochzeit' && game.declarer !== null && game.partner !== null && game.phase !== 'hochzeit') {
+      return `Hochzeit: ${who(game.declarer)} und ${who(game.partner)} spielen zusammen${doubles}`;
+    }
+    if (c && game.declarer !== null) return `${who(game.declarer)} ${verb(game.declarer, 'spielst', 'spielt')} ${contractName(c)}${doubles}`;
+    const muss = game.muss && game.phase === 'bidding' ? ' · Muss-Spiel (Eichel-Ober)' : '';
+    return `Spiel ${gameNo} · ${who(game.dealer)} ${verb(game.dealer, 'gibst', 'gibt')}${bock}${muss}`;
+  })();
   const showKontra = !shownTrick && canKontra(game, me);
   const showRe = !shownTrick && canRe(game, me);
 
@@ -212,6 +231,15 @@ export function GameTable(props: GameTableProps) {
         <Text style={styles.status} testID="status">
           {status}
         </Text>
+        {answeringHochzeit && (
+          <Pressable
+            onPress={() => onAction({ type: 'hochzeit', player: me, accept: false })}
+            style={({ pressed }) => [styles.declineBtn, pressed && { opacity: 0.7 }]}
+            testID="hochzeit-nein"
+          >
+            <Text style={styles.declineBtnText}>Nein, danke</Text>
+          </Pressable>
+        )}
         {(showKontra || showRe) && (
           <Pressable
             onPress={() => onAction({ type: showKontra ? 'kontra' : 're', player: me })}
@@ -248,10 +276,14 @@ export function GameTable(props: GameTableProps) {
             <CardView
               card={c}
               width={handW}
-              enabled={legal.includes(c) && !showLast}
+              enabled={(legal.includes(c) && !showLast) || answeringHochzeit}
               dimmed={game.phase === 'playing' && myTurn && !shownTrick && !legal.includes(c)}
-              highlight={game.phase === 'playing' && myTurn && legal.includes(c) && !shownTrick}
-              onPress={() => onAction({ type: 'play', player: me, card: c })}
+              highlight={(game.phase === 'playing' && myTurn && legal.includes(c) && !shownTrick) || answeringHochzeit}
+              onPress={() =>
+                answeringHochzeit
+                  ? onAction({ type: 'hochzeit', player: me, accept: true, give: c })
+                  : onAction({ type: 'play', player: me, card: c })
+              }
             />
             </View>
           ))}
@@ -302,6 +334,11 @@ function Seat({
   pos: 'top' | 'left' | 'right';
 }) {
   const tricks = game.tricks.filter((t) => t.winner === player).length;
+  // Bettel Brett: die Karten des Spielers liegen offen.
+  const open =
+    game.phase === 'playing' && game.contract?.kind === 'bettel' && !!game.contract.brett && game.declarer === player &&
+    !game.hands[player].includes('??' as CardId);
+  const openW = pos === 'top' ? 34 : 26;
   const active = game.turn === player && game.phase !== 'finished';
   return (
     <View style={[styles.seat, style, bubble ? { zIndex: 20 } : null]}>
@@ -319,11 +356,17 @@ function Seat({
       {game.dealer === player && <Text style={styles.dealer}>gibt</Text>}
       {game.phase !== 'bidding' && game.declarer === player && <Text style={styles.badge}>Spieler</Text>}
       <View style={styles.backs}>
-        {game.hands[player].map((_, i) => (
-          <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.72 }}>
-            <CardBack width={cardW} />
-          </View>
-        ))}
+        {open
+          ? game.hands[player].map((c, i) => (
+              <View key={c} style={{ marginLeft: i === 0 ? 0 : -openW * 0.62 }}>
+                <CardView card={c} width={openW} />
+              </View>
+            ))
+          : game.hands[player].map((_, i) => (
+              <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.72 }}>
+                <CardBack width={cardW} />
+              </View>
+            ))}
       </View>
       {game.phase !== 'bidding' && <Text style={styles.seatInfo}>Stiche: {tricks}</Text>}
     </View>
@@ -349,22 +392,69 @@ function TrickArea({ trick, cardW, me }: { trick: Trick | null; cardW: number; m
   );
 }
 
+/** Spielart, unter der eine Ansage im Ansage-Feld gruppiert wird. */
+function family(c: Contract): string {
+  if (c.kind === 'bettel') return c.brett ? 'brett' : 'bettel';
+  return c.kind;
+}
+
+const FAMILY_LABEL: Record<string, string> = {
+  sauspiel: 'Sauspiel',
+  hochzeit: 'Hochzeit',
+  bettel: 'Bettel',
+  farbwenz: 'Farbwenz',
+  farbgeier: 'Farbgeier',
+  wenz: 'Wenz',
+  geier: 'Geier',
+  solo: 'Solo',
+  brett: 'Bettel Brett',
+  sie: 'Sie',
+};
+
+/** Beschriftung einer Variante innerhalb der Spielart. */
+function variantLabel(c: Contract): string {
+  if (c.kind === 'sauspiel') return `Auf die ${SUIT_NAMES[c.suit]}-Sau`;
+  return contractName(c);
+}
+
+/**
+ * Ansage in zwei Schritten: erst die Spielart, dann (falls nötig) Farbe bzw. Tout.
+ * Gibt es für eine Spielart nur eine Möglichkeit, wird sie sofort angesagt.
+ */
 function BidPanel({ game, me, onBid }: { game: GameState; me: number; onBid: (c: Contract | null) => void }) {
   const bids = legalBids(game, me);
+  const [fam, setFam] = useState<string | null>(null);
+  const games = bids.filter((b): b is Contract => b !== null);
+  const families = [...new Set(games.map(family))];
+  const variants = fam ? games.filter((b) => family(b) === fam) : [];
+  const btn = (key: string, label: string, onPress: () => void, ghost = false) => (
+    <Pressable
+      key={key}
+      onPress={onPress}
+      style={({ pressed }) => [styles.bidBtn, ghost && styles.passBtn, pressed && { opacity: 0.7 }]}
+      testID={key}
+    >
+      <Text style={[styles.bidBtnText, ghost && { color: COLORS.text }]}>{label}</Text>
+    </Pressable>
+  );
   return (
     <View style={styles.bidPanel}>
-      <Text style={styles.panelTitle}>Deine Ansage</Text>
+      <Text style={styles.panelTitle}>{fam ? FAMILY_LABEL[fam] : 'Deine Ansage'}</Text>
       <ScrollView contentContainerStyle={styles.bidButtons}>
-        {bids.map((b) => (
-          <Pressable
-            key={bidLabel(b)}
-            onPress={() => onBid(b)}
-            style={({ pressed }) => [styles.bidBtn, !b && styles.passBtn, pressed && { opacity: 0.7 }]}
-            testID={`bid-${bidLabel(b)}`}
-          >
-            <Text style={[styles.bidBtnText, !b && { color: COLORS.text }]}>{shortBid(b)}</Text>
-          </Pressable>
-        ))}
+        {fam
+          ? [
+              btn('bid-back', '‹ Zurück', () => setFam(null), true),
+              ...variants.map((v) => btn(`bid-${bidLabel(v)}`, variantLabel(v), () => onBid(v))),
+            ]
+          : [
+              ...(bids.includes(null) ? [btn('bid-Weiter', 'Weiter', () => onBid(null), true)] : []),
+              ...families.map((f) => {
+                const vs = games.filter((b) => family(b) === f);
+                return vs.length === 1
+                  ? btn(`bid-${bidLabel(vs[0])}`, f === 'sauspiel' ? variantLabel(vs[0]) : FAMILY_LABEL[f], () => onBid(vs[0]))
+                  : btn(`fam-${f}`, `${FAMILY_LABEL[f]} …`, () => setFam(f));
+              }),
+            ]}
       </ScrollView>
     </View>
   );
@@ -375,6 +465,35 @@ function ResultPanel({ game, me, names, onNext, nextHint, nextDisabled }: GameTa
   let body: React.ReactNode;
   if (r.kind === 'zamgeworfen') {
     body = <Text style={styles.resultLine}>Alle haben „weiter“ gesagt. Die Karten werden neu gegeben.</Text>;
+  } else if (r.kind === 'ramsch') {
+    const mine = r.payouts[me];
+    body = (
+      <>
+        <Text style={[styles.resultHead, { color: mine > 0 ? COLORS.accent : COLORS.text }]}>
+          {mine > 0 ? 'Gewonnen!' : mine < 0 ? 'Verloren' : 'Unentschieden'}
+        </Text>
+        <Text style={styles.resultLine}>
+          {r.durchmarsch !== null
+            ? `Durchmarsch! ${names[r.durchmarsch]} hat alle Stiche gemacht.`
+            : `Ramsch: ${r.losers.map((p) => (p === me ? 'Du' : names[p])).join(' und ')} ${r.losers.length > 1 ? 'haben' : r.losers[0] === me ? 'hast' : 'hat'} die meisten Augen.`}
+        </Text>
+        {r.points.map((pts, i) => (
+          <Text key={i} style={styles.resultSmall}>
+            {names[i]}: {pts} Augen, {r.tricks[i]} {r.tricks[i] === 1 ? 'Stich' : 'Stiche'}
+          </Text>
+        ))}
+        <Text style={styles.resultSmall}>
+          {r.breakdown.join(' · ')} = {r.amount} Cent
+        </Text>
+        <View style={{ marginTop: 8 }}>
+          {r.payouts.map((p, i) => (
+            <Text key={i} style={styles.resultLine}>
+              {names[i]}: {euro(p)}
+            </Text>
+          ))}
+        </View>
+      </>
+    );
   } else {
     const team = r.declarerTeam.map((p) => (p === me ? 'Du' : names[p])).join(' und ');
     const won = r.payouts[me] > 0;
@@ -383,10 +502,21 @@ function ResultPanel({ game, me, names, onNext, nextHint, nextDisabled }: GameTa
         <Text style={[styles.resultHead, { color: won ? COLORS.accent : COLORS.text }]}>{won ? 'Gewonnen!' : 'Verloren'}</Text>
         <Text style={styles.resultLine}>
           {contractName(r.contract)}: {team} {r.declarerTeam.length > 1 ? (r.declarerTeam.includes(me) ? 'habt' : 'haben') : r.declarer === me ? 'hast' : 'hat'}{' '}
-          {r.declarerPoints} Augen und {r.declarerWon ? 'gewonnen' : 'verloren'}.
+          {r.contract.kind === 'bettel' || isTout(r.contract)
+            ? `${r.declarerTricks} ${r.declarerTricks === 1 ? 'Stich' : 'Stiche'}`
+            : r.contract.kind === 'sie'
+              ? 'alle Ober und Unter'
+              : `${r.declarerPoints} Augen`}{' '}
+          und {r.declarerWon ? 'gewonnen' : 'verloren'}.
         </Text>
-        {r.partner !== null && <Text style={styles.resultLine}>Mitspieler mit der Sau: {names[r.partner]}</Text>}
-        <Text style={styles.resultLine}>Gegenspieler: {r.opponentPoints} Augen</Text>
+        {r.partner !== null && (
+          <Text style={styles.resultLine}>
+            {r.contract.kind === 'hochzeit' ? 'Hochzeit mit' : 'Mitspieler mit der Sau'}: {names[r.partner]}
+          </Text>
+        )}
+        {r.contract.kind !== 'bettel' && !isTout(r.contract) && r.contract.kind !== 'sie' && (
+          <Text style={styles.resultLine}>Gegenspieler: {r.opponentPoints} Augen</Text>
+        )}
         <Text style={styles.resultSmall}>
           {r.breakdown.join(' · ')} = {r.amount} Cent
         </Text>
@@ -440,6 +570,8 @@ const styles = StyleSheet.create({
   bubbleTextLoud: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
   tailDown: { position: 'absolute', bottom: -7, left: 14, width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#fffaf0' },
   tailLeft: { position: 'absolute', left: -8, top: 9, width: 0, height: 0, borderTopWidth: 7, borderBottomWidth: 7, borderRightWidth: 8, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderRightColor: '#fffaf0' },
+  declineBtn: { alignSelf: 'center', marginTop: 8, borderRadius: 18, paddingHorizontal: 18, paddingVertical: 8, borderWidth: 1.5, borderColor: COLORS.muted },
+  declineBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
   kontraBtn: { alignSelf: 'center', marginTop: 8, backgroundColor: '#c0392b', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 8, borderWidth: 1.5, borderColor: '#f2c14e' },
   kontraBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   badge: { color: '#1b1b1b', backgroundColor: COLORS.accent, fontSize: 11, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden', marginVertical: 2 },

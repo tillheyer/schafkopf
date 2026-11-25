@@ -1,8 +1,8 @@
-import type { Action, GameState } from '../engine';
+import type { Action, GameState, Rules } from '../engine';
 
 /** Nachrichten zwischen App und Online-Server (JSON über WebSocket). */
 export type ClientMsg =
-  | { t: 'create'; name: string }
+  | { t: 'create'; name: string; rules?: Rules }
   | { t: 'join'; code: string; name: string }
   | { t: 'start' }
   | { t: 'action'; action: Action }
@@ -25,6 +25,8 @@ export interface RoomView {
   totals: number[];
   ready: boolean[];
   game: GameState | null;
+  /** Sonderregeln des Tisches. */
+  rules?: Rules;
 }
 
 export type ServerMsg = { t: 'room'; room: RoomView } | { t: 'error'; message: string };

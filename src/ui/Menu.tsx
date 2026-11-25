@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from './theme';
 import { CardView } from './CardView';
+import { Rules } from '../engine';
+import { rulesSummary } from './RulesScreen';
 
-export type MenuChoice = { kind: 'local' } | { kind: 'create' } | { kind: 'join'; code: string };
+export type MenuChoice = { kind: 'local' } | { kind: 'create' } | { kind: 'join'; code: string } | { kind: 'rules' };
 
-export function Menu({ name, setName, initialCode, onChoose }: {
+export function Menu({ name, setName, initialCode, rules, onChoose }: {
+  rules: Rules;
   name: string;
   setName: (n: string) => void;
   initialCode: string;
@@ -74,6 +77,10 @@ export function Menu({ name, setName, initialCode, onChoose }: {
             </Pressable>
           </View>
         )}
+        <Pressable style={styles.rulesBtn} onPress={() => onChoose({ kind: 'rules' })} testID="menu-rules">
+          <Text style={styles.rulesTitle}>Spielregeln ›</Text>
+          <Text style={styles.rulesText} numberOfLines={2}>{rulesSummary(rules)}</Text>
+        </Pressable>
       </View>
     </ImageBackground>
   );
@@ -96,4 +103,7 @@ const styles = StyleSheet.create({
   joinRow: { flexDirection: 'row', gap: 8 },
   codeInput: { flex: 1, letterSpacing: 4, fontWeight: '700', textAlign: 'center' },
   joinBtn: { paddingHorizontal: 18 },
+  rulesBtn: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.2)', alignItems: 'center' },
+  rulesTitle: { color: COLORS.accent, fontWeight: '700', fontSize: 15 },
+  rulesText: { color: COLORS.muted, fontSize: 12, textAlign: 'center', marginTop: 2 },
 });

@@ -1,5 +1,6 @@
 import { CardId, pointsOf, rankOf, suitOf, sumPoints, Suit } from './cards';
-import { Contract, contractRank, effectiveSuit, isTrump, trickWinnerIndex, trumpPower } from './rules';
+import { trumpOrder } from './rules';
+import { Contract, contractRank, effectiveSuit, isTrump, sameContract, suitPower, trickWinnerIndex, trumpPower } from './rules';
 import { Action, GameState, callableSuits, calledAcePlayed, canKontra, canRe, highestBid, legalBids, legalCards, sauGesucht } from './game';
 
 /**
@@ -8,12 +9,27 @@ import { Action, GameState, callableSuits, calledAcePlayed, canKontra, canRe, hi
  */
 export function chooseAction(s: GameState, player: number): Action {
   if (s.phase === 'bidding') return { type: 'bid', player, contract: chooseBid(s, player) };
+  if (s.phase === 'hochzeit') return chooseHochzeit(s, player);
   if (canKontra(s, player) && wantsKontra(s, player)) return { type: 'kontra', player };
   if (canRe(s, player) && wantsRe(s, player)) return { type: 're', player };
   return { type: 'play', player, card: chooseCard(s, player) };
 }
 
 // ---------------------------------------------------------------- Kontra und Re
+
+/** Hochzeit annehmen, wenn man selbst viele Trümpfe hat; die schwächste Fehlkarte abgeben. */
+function chooseHochzeit(s: GameState, player: number): Action {
+  const hand = s.hands[player];
+  const c: Contract = { kind: 'sauspiel', suit: 'E' };
+  const trumps = count(hand, (x) => isTrump(x, c));
+  const obers = count(hand, (x) => rankOf(x) === 'O');
+  if (trumps >= 5 || (trumps >= 4 && obers >= 2)) {
+    const side = hand.filter((x) => !isTrump(x, c)).sort((a, b) => pointsOf(a) - pointsOf(b) || suitPower(a, c) - suitPower(b, c));
+    const give = side[0] ?? [...hand].sort((a, b) => trumpPower(a, c) - trumpPower(b, c))[0];
+    return { type: 'hochzeit', player, accept: true, give };
+  }
+  return { type: 'hochzeit', player, accept: false };
+}
 
 function handStats(s: GameState, player: number) {
   const c = s.contract!;
@@ -32,6 +48,8 @@ function wantsKontra(s: GameState, player: number): boolean {
   const h = handStats(s, player);
   if (k === 'sauspiel') return (h.trumps >= 5 && h.obers >= 2) || h.trumps >= 6;
   if (k === 'wenz') return h.unters >= 2 && h.aces >= 3;
+  if (k === 'geier') return h.obers >= 2 && h.aces >= 3;
+  if (k === 'bettel' || k === 'hochzeit') return false;
   return h.trumps >= 4 && h.obers >= 3;
 }
 
@@ -41,6 +59,8 @@ function wantsRe(s: GameState, player: number): boolean {
   const h = handStats(s, player);
   if (k === 'sauspiel') return h.trumps >= 6 || (h.trumps >= 5 && h.obers >= 3);
   if (k === 'wenz') return h.unters >= 3 && h.aces >= 3;
+  if (k === 'geier') return h.obers >= 3 && h.aces >= 3;
+  if (k === 'bettel' || k === 'hochzeit') return false;
   return h.trumps >= 7;
 }
 
@@ -76,33 +96,90 @@ function sauspielStrength(hand: readonly CardId[]): boolean {
   return trumps >= 5 || (trumps >= 4 && obers >= 2);
 }
 
+/** Geier wie Wenz, nur mit den Obern. */
+function geierStrength(hand: readonly CardId[]): boolean {
+  const obers = count(hand, (x) => rankOf(x) === 'O');
+  const aces = count(hand, (x) => rankOf(x) === 'A');
+  const score = obers * 2 + aces * 1.5;
+  return (obers >= 3 && score >= 8) || (obers >= 2 && hand.includes('EO') && score >= 9.5);
+}
+
+/** Farbwenz/Farbgeier: viele Trümpfe mit mindestens zwei Bildern. */
+function farbStrength(hand: readonly CardId[], c: Contract): boolean {
+  const trumps = count(hand, (x) => isTrump(x, c));
+  const tops = count(hand, (x) => isTrump(x, c) && trumpPower(x, c) >= 17);
+  return (trumps >= 7 && tops >= 2) || (trumps >= 6 && tops >= 3);
+}
+
+/** Bettel: keine hohen Karten und in jeder Farbe eine ganz kleine. */
+function bettelStrength(hand: readonly CardId[]): boolean {
+  if (hand.some((x) => rankOf(x) === 'A' || rankOf(x) === 'K')) return false;
+  if (count(hand, (x) => rankOf(x) === 'O') > 1) return false;
+  return (['E', 'G', 'H', 'S'] as Suit[]).every((su) => {
+    const cards = hand.filter((x) => suitOf(x) === su);
+    return cards.length === 0 || cards.some((x) => rankOf(x) === '7' || rankOf(x) === '8');
+  });
+}
+
+/** Tout: so stark, dass man alle Stiche erwartet. */
+function toutStrength(hand: readonly CardId[], c: Contract): boolean {
+  const trumps = count(hand, (x) => isTrump(x, c));
+  const top = trumpOrder(c).slice(0, 3).every((x) => hand.includes(x));
+  const sideOk = hand.filter((x) => !isTrump(x, c)).every((x) => rankOf(x) === 'A');
+  return (trumps >= 7 && top) || (trumps >= 5 && top && sideOk);
+}
+
 export function chooseBid(s: GameState, player: number): Contract | null {
   const hand = s.hands[player];
-  const legal = legalBids(s, player);
-  const min = highestBid(s) ? contractRank(highestBid(s)!.contract!) + 1 : 1;
+  const legal = legalBids(s, player).filter((b): b is Contract => b !== null);
+  const can = (c: Contract) => legal.some((b) => sameContract(b, c));
+  const pick = (c: Contract) => (can(c) ? c : null);
 
-  if (min <= 3) {
-    const suits = (['E', 'G', 'H', 'S'] as Suit[]).filter((su) => soloStrength(hand, su));
-    if (suits.length) {
-      // Farbe mit den meisten Trümpfen.
-      suits.sort(
-        (a, b) =>
-          count(hand, (x) => isTrump(x, { kind: 'solo', suit: b })) -
-          count(hand, (x) => isTrump(x, { kind: 'solo', suit: a })),
-      );
-      return { kind: 'solo', suit: suits[0] };
+  const sie = pick({ kind: 'sie' });
+  if (sie) return sie;
+
+  // Kandidaten von hoch nach niedrig prüfen.
+  const solos = (['E', 'G', 'H', 'S'] as Suit[])
+    .filter((su) => soloStrength(hand, su))
+    .sort((a, b) => count(hand, (x) => isTrump(x, { kind: 'solo', suit: b })) - count(hand, (x) => isTrump(x, { kind: 'solo', suit: a })));
+  for (const su of solos) {
+    const t = pick({ kind: 'solo', suit: su, tout: true });
+    if (t && toutStrength(hand, t)) return t;
+  }
+  if (wenzStrength(hand)) {
+    const t = pick({ kind: 'wenz', tout: true });
+    if (t && toutStrength(hand, t)) return t;
+  }
+  if (bettelStrength(hand)) {
+    const b = pick({ kind: 'bettel', brett: true });
+    if (b && count(hand, (x) => rankOf(x) === '7') >= 3) return b;
+  }
+  for (const su of solos) {
+    const c = pick({ kind: 'solo', suit: su });
+    if (c) return c;
+  }
+  if (wenzStrength(hand) && can({ kind: 'wenz' })) return { kind: 'wenz' };
+  if (geierStrength(hand) && can({ kind: 'geier' })) return { kind: 'geier' };
+  for (const kind of ['farbwenz', 'farbgeier'] as const) {
+    for (const su of ['E', 'G', 'H', 'S'] as Suit[]) {
+      const c = pick({ kind, suit: su });
+      if (c && farbStrength(hand, c)) return c;
     }
   }
-  if (min <= 2 && wenzStrength(hand)) return { kind: 'wenz' };
-  if (min <= 1 && sauspielStrength(hand)) {
-    const callable = callableSuits(hand);
+  if (bettelStrength(hand) && can({ kind: 'bettel' })) return { kind: 'bettel' };
+  if (sauspielStrength(hand)) {
+    const callable = callableSuits(hand).filter((su) => can({ kind: 'sauspiel', suit: su }));
     if (callable.length) {
       // Am liebsten auf eine Farbe rufen, von der man wenig hat.
       callable.sort((a, b) => sideCount(hand, a) - sideCount(hand, b));
       return { kind: 'sauspiel', suit: callable[0] };
     }
   }
-  return legal.includes(null) ? null : legal[0];
+  const h = pick({ kind: 'hochzeit' });
+  if (h && count(hand, (x) => rankOf(x) === 'A') >= 2) return h;
+  if (legalBids(s, player).includes(null)) return null;
+  // Muss-Spiel: irgendein Spiel ansagen, am liebsten ein Sauspiel.
+  return legal.find((b) => b.kind === 'sauspiel') ?? legal.find((b) => b.kind === 'hochzeit') ?? legal.find((b) => b.kind === 'wenz') ?? legal[0];
 }
 
 const sideCount = (hand: readonly CardId[], suit: Suit) =>
@@ -114,6 +191,11 @@ const sideCount = (hand: readonly CardId[], suit: Suit) =>
 export function knownTeammates(s: GameState, me: number): number[] {
   const d = s.declarer!;
   const c = s.contract!;
+  if (c.kind === 'ramsch') return [];
+  if (c.kind === 'hochzeit') {
+    const team = [d, s.partner!];
+    return (team.includes(me) ? team : [0, 1, 2, 3].filter((x) => !team.includes(x))).filter((x) => x !== me);
+  }
   if (c.kind !== 'sauspiel') {
     return me === d ? [] : [0, 1, 2, 3].filter((p) => p !== d && p !== me);
   }
@@ -136,9 +218,11 @@ export function chooseCard(s: GameState, me: number): CardId {
   const c = s.contract!;
   const legal = legalCards(s, me);
   if (legal.length === 1) return legal[0];
+  if (c.kind === 'bettel') return bettelCard(s, me, legal);
+  if (c.kind === 'ramsch') return ramschCard(s, me, legal);
   const trick = s.current!;
   const mates = knownTeammates(s, me);
-  const onDeclarerSide = me === s.declarer || (me === s.partner && c.kind === 'sauspiel');
+  const onDeclarerSide = me === s.declarer || (me === s.partner && (c.kind === 'sauspiel' || c.kind === 'hochzeit'));
   const byCost = [...legal].sort((a, b) => cost(a, c) - cost(b, c));
 
   // ---------- Ausspielen
@@ -184,4 +268,29 @@ export function chooseCard(s: GameState, me: number): CardId {
 function smearValue(card: CardId, c: Contract): number {
   const t = trumpPower(card, c);
   return t >= 0 ? pointsOf(card) - 8 - t : pointsOf(card);
+}
+
+/** Bettel: der Spieler drückt sich unter dem Stich, die Gegner spielen klein. */
+function bettelCard(s: GameState, me: number, legal: CardId[]): CardId {
+  const c = s.contract!;
+  const low = [...legal].sort((a, b) => suitPower(a, c) - suitPower(b, c));
+  if (me !== s.declarer) return low[0];
+  const trick = s.current!;
+  if (trick.cards.length === 0) return low[0];
+  const under = legal.filter((x) => trickWinnerIndex([...trick.cards, x], c) !== trick.cards.length);
+  if (under.length) return under.sort((a, b) => suitPower(b, c) - suitPower(a, c))[0];
+  return low[0];
+}
+
+/** Ramsch: möglichst keine Stiche mit Augen, Augen lieber anderen geben. */
+function ramschCard(s: GameState, me: number, legal: CardId[]): CardId {
+  const c = s.contract!;
+  const trick = s.current!;
+  const strength = (x: CardId) => (isTrump(x, c) ? 20 + trumpPower(x, c) : suitPower(x, c));
+  if (trick.cards.length === 0) return [...legal].sort((a, b) => strength(a) - strength(b))[0];
+  const under = legal.filter((x) => trickWinnerIndex([...trick.cards, x], c) !== trick.cards.length);
+  if (under.length) return under.sort((a, b) => pointsOf(b) - pointsOf(a) || strength(b) - strength(a))[0];
+  // Man muss stechen: als Letzter die stärkste Karte loswerden, sonst die billigste.
+  if (trick.cards.length === 3) return [...legal].sort((a, b) => strength(b) - strength(a))[0];
+  return [...legal].sort((a, b) => pointsOf(a) - pointsOf(b) || strength(a) - strength(b))[0];
 }

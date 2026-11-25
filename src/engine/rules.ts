@@ -1,22 +1,71 @@
 import { CardId, Suit, SUITS, rankOf, suitOf, SUIT_NAMES } from './cards';
 
-/** Spielarten der ersten Version. */
+/** Spielarten. `tout` = Ansage, alle Stiche zu machen (verdoppelt). */
 export type Contract =
   | { kind: 'sauspiel'; suit: Suit } // suit = gerufene Sau
-  | { kind: 'wenz' }
-  | { kind: 'solo'; suit: Suit }; // suit = Trumpffarbe
+  | { kind: 'hochzeit' } // Partner nimmt den einzigen Trumpf auf
+  | { kind: 'ramsch' } // alle gegen alle, wenn niemand spielt
+  | { kind: 'bettel'; brett?: boolean } // Nullspiel, Brett = offen
+  | { kind: 'wenz'; tout?: boolean }
+  | { kind: 'geier'; tout?: boolean }
+  | { kind: 'farbwenz'; suit: Suit; tout?: boolean }
+  | { kind: 'farbgeier'; suit: Suit; tout?: boolean }
+  | { kind: 'solo'; suit: Suit; tout?: boolean } // suit = Trumpffarbe
+  | { kind: 'sie' }; // alle Ober und Unter auf der Hand
 
-export const contractRank = (c: Contract): number =>
-  c.kind === 'sauspiel' ? 1 : c.kind === 'wenz' ? 2 : 3;
+export type ContractKind = Contract['kind'];
+
+/** Solospiele (einer gegen drei), bei denen Tout angesagt werden kann. */
+export const TOUT_KINDS: ContractKind[] = ['wenz', 'geier', 'farbwenz', 'farbgeier', 'solo'];
+export const isTout = (c: Contract): boolean => 'tout' in c && !!c.tout;
+/** Einer gegen drei? */
+export const isSoloLike = (c: Contract): boolean => !['sauspiel', 'hochzeit', 'ramsch'].includes(c.kind);
+
+/**
+ * Rangfolge beim Reizen (höher sticht niedriger).
+ * ANNAHME: Sauspiel/Hochzeit < Bettel < Farbwenz/Farbgeier < Wenz/Geier < Solo < Bettel Brett,
+ * jedes Tout steht über allen Spielen ohne Tout. Sie ist das höchste Spiel.
+ */
+export function contractRank(c: Contract): number {
+  const base: Record<ContractKind, number> = {
+    sauspiel: 1,
+    hochzeit: 1,
+    ramsch: 0,
+    bettel: 2,
+    farbwenz: 3,
+    farbgeier: 3,
+    wenz: 4,
+    geier: 4,
+    solo: 5,
+    sie: 20,
+  };
+  if (c.kind === 'bettel' && c.brett) return 6;
+  return base[c.kind] + (isTout(c) ? 6 : 0);
+}
 
 export function contractName(c: Contract): string {
+  const tout = isTout(c) ? ' Tout' : '';
   switch (c.kind) {
     case 'sauspiel':
       return `Sauspiel auf die ${SUIT_NAMES[c.suit]}-Sau`;
+    case 'hochzeit':
+      return 'Hochzeit';
+    case 'ramsch':
+      return 'Ramsch';
+    case 'bettel':
+      return c.brett ? 'Bettel Brett' : 'Bettel';
     case 'wenz':
-      return 'Wenz';
+      return `Wenz${tout}`;
+    case 'geier':
+      return `Geier${tout}`;
+    case 'farbwenz':
+      return `${SUIT_NAMES[c.suit]}-Wenz${tout}`;
+    case 'farbgeier':
+      return `${SUIT_NAMES[c.suit]}-Geier${tout}`;
     case 'solo':
-      return `${SUIT_NAMES[c.suit]}-Solo`;
+      return `${SUIT_NAMES[c.suit]}-Solo${tout}`;
+    case 'sie':
+      return 'Sie';
   }
 }
 
@@ -25,21 +74,46 @@ export const sameContract = (a: Contract | null, b: Contract | null): boolean =>
 
 /** Reihenfolge der Farben bei Obern und Untern: Eichel > Gras > Herz > Schellen. */
 const OU_ORDER: Suit[] = ['E', 'G', 'H', 'S'];
-/** Rangfolge innerhalb einer Farbe (hoch nach niedrig), ohne Ober/Unter. */
-const SUIT_ORDER_NORMAL = ['A', '10', 'K', '9', '8', '7'];
-/** Beim Wenz sind die Ober normale Farbkarten zwischen König und Neun. */
-const SUIT_ORDER_WENZ = ['A', '10', 'K', 'O', '9', '8', '7'];
+
+/** Welche Bilder sind Trumpf ("O", "U", beide oder keine) und welche Farbe? */
+function trumpCfg(c: Contract): { tops: string[]; suit: Suit | null } {
+  switch (c.kind) {
+    case 'sauspiel':
+    case 'hochzeit':
+    case 'ramsch':
+    case 'sie':
+      return { tops: ['O', 'U'], suit: 'H' };
+    case 'solo':
+      return { tops: ['O', 'U'], suit: c.suit };
+    case 'wenz':
+      return { tops: ['U'], suit: null };
+    case 'farbwenz':
+      return { tops: ['U'], suit: c.suit };
+    case 'geier':
+      return { tops: ['O'], suit: null };
+    case 'farbgeier':
+      return { tops: ['O'], suit: c.suit };
+    case 'bettel':
+      return { tops: [], suit: null };
+  }
+}
+
+/** Rangfolge innerhalb einer Farbe (hoch nach niedrig) für Karten, die keine Trumpf-Bilder sind. */
+function suitOrder(c: Contract): string[] {
+  if (c.kind === 'bettel') return ['A', 'K', 'O', 'U', '10', '9', '8', '7'];
+  const tops = trumpCfg(c).tops;
+  if (tops.length === 2) return ['A', '10', 'K', '9', '8', '7'];
+  if (tops[0] === 'U') return ['A', '10', 'K', 'O', '9', '8', '7'];
+  return ['A', '10', 'K', 'U', '9', '8', '7'];
+}
 
 export function trumpSuit(c: Contract): Suit | null {
-  if (c.kind === 'sauspiel') return 'H';
-  if (c.kind === 'solo') return c.suit;
-  return null;
+  return trumpCfg(c).suit;
 }
 
 export function isTrump(card: CardId, c: Contract): boolean {
-  const r = rankOf(card);
-  if (c.kind === 'wenz') return r === 'U';
-  return r === 'O' || r === 'U' || suitOf(card) === trumpSuit(c);
+  const { tops, suit } = trumpCfg(c);
+  return tops.includes(rankOf(card)) || suitOf(card) === suit;
 }
 
 /** "T" für Trumpf, sonst die Farbe, zu der die Karte beim Bedienen zählt. */
@@ -50,17 +124,20 @@ export const effectiveSuit = (card: CardId, c: Contract): EffectiveSuit =>
 /** Stärke eines Trumpfs (größer = stärker), -1 wenn kein Trumpf. */
 export function trumpPower(card: CardId, c: Contract): number {
   if (!isTrump(card, c)) return -1;
+  const { tops } = trumpCfg(c);
   const r = rankOf(card);
   const s = suitOf(card);
-  if (c.kind === 'wenz') return 20 - OU_ORDER.indexOf(s);
-  if (r === 'O') return 20 - OU_ORDER.indexOf(s);
-  if (r === 'U') return 16 - OU_ORDER.indexOf(s);
-  return 12 - SUIT_ORDER_NORMAL.indexOf(r);
+  if (tops.includes(r)) {
+    // Ober vor Untern; innerhalb Eichel > Gras > Herz > Schellen.
+    return (r === 'O' || tops.length === 1 ? 20 : 16) - OU_ORDER.indexOf(s);
+  }
+  const order = suitOrder(c);
+  return 12 - order.indexOf(r);
 }
 
 /** Stärke innerhalb einer Fehlfarbe (größer = stärker). */
 export function suitPower(card: CardId, c: Contract): number {
-  const order = c.kind === 'wenz' ? SUIT_ORDER_WENZ : SUIT_ORDER_NORMAL;
+  const order = suitOrder(c);
   return order.length - order.indexOf(rankOf(card));
 }
 

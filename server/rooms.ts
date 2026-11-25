@@ -1,11 +1,14 @@
 import {
   Action,
   GameState,
+  MatchInfo,
+  Rules,
   applyAction,
   chooseAction,
   createRng,
-  newGame,
-  next,
+  dealGame,
+  finishGame,
+  newMatch,
   redactFor,
 } from '../src/engine';
 import { BOT_NAMES, RoomView, SeatInfo } from '../src/net/protocol';
@@ -29,15 +32,14 @@ export class Room {
   seats: Seat[] = [];
   host = 0;
   started = false;
-  gameNo = 0;
-  totals = [0, 0, 0, 0];
+  match: MatchInfo;
   ready = [false, false, false, false];
   game: GameState | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private dealer = 3;
   lastActivity = Date.now();
 
-  constructor(public code: string) {
+  constructor(public code: string, public rules?: Rules) {
+    this.match = newMatch(rules);
     for (let i = 0; i < 4; i++) this.seats.push({ name: BOT_NAMES[i], bot: true, connected: false, client: null });
   }
 
@@ -104,13 +106,18 @@ export class Room {
     else this.broadcast();
   }
 
+  get gameNo() {
+    return this.game ? this.match.gameNo : 0;
+  }
+
+  get totals() {
+    return this.match.totals;
+  }
+
   private newGame() {
-    const r = this.game?.result;
-    if (r?.kind === 'played') this.totals = this.totals.map((t, i) => t + r.payouts[i]);
-    if (this.game) this.dealer = next(this.dealer);
-    this.gameNo++;
+    if (this.game) this.match = finishGame(this.match, this.game);
     this.ready = [false, false, false, false];
-    this.game = newGame(this.dealer, createRng(Date.now() ^ (this.gameNo * 7919)));
+    this.game = dealGame(this.match, createRng(Date.now() ^ (this.match.gameNo * 7919)));
     this.afterChange();
   }
 
@@ -147,6 +154,7 @@ export class Room {
       totals: this.totals,
       ready: this.ready,
       game: this.game ? redactFor(this.game, seat) : null,
+      rules: this.match.rules,
     };
   }
 
