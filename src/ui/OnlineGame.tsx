@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ImageBackground, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Action } from '../engine';
+import { Action, Rules } from '../engine';
+import { rulesSummary } from './RulesScreen';
 import { SERVER_URL } from '../net/config';
 import { ClientMsg, RoomView, ServerMsg } from '../net/protocol';
 import { GameTable } from './GameTable';
@@ -9,7 +10,7 @@ import { COLORS } from './theme';
 type Mode = { kind: 'create' } | { kind: 'join'; code: string };
 
 /** Online-Tisch: Verbindung zum Server, Warteraum und Spiel. */
-export function OnlineGame({ name, mode, onExit }: { name: string; mode: Mode; onExit: () => void }) {
+export function OnlineGame({ name, mode, rules, onExit }: { name: string; mode: Mode; rules: Rules; onExit: () => void }) {
   const [room, setRoom] = useState<RoomView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -27,7 +28,7 @@ export function OnlineGame({ name, mode, onExit }: { name: string; mode: Mode; o
         attempts = 0;
         setConnected(true);
         // Nach Verbindungsabbruch automatisch wieder an den gleichen Tisch.
-        const msg: ClientMsg = codeRef.current ? { t: 'join', code: codeRef.current, name } : { t: 'create', name };
+        const msg: ClientMsg = codeRef.current ? { t: 'join', code: codeRef.current, name } : { t: 'create', name, rules };
         sock.send(JSON.stringify(msg));
       };
       sock.onmessage = (e) => {
@@ -95,6 +96,7 @@ export function OnlineGame({ name, mode, onExit }: { name: string; mode: Mode; o
         <Text style={styles.code} testID="room-code">{room.code}</Text>
         <Text style={styles.small}>Schick deinen Freunden den Code{link ? ' oder diesen Link' : ''}.</Text>
         {link && <Text selectable style={styles.link}>{link}</Text>}
+        {room.rules && <Text style={styles.small} testID="room-rules">Regeln: {rulesSummary(room.rules)}</Text>}
         <View style={styles.seats}>
           {room.seats.map((s, i) => (
             <View key={i} style={styles.seatRow}>

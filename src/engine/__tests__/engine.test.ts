@@ -13,8 +13,18 @@ import {
   trickWinnerIndex,
   trumpOrder,
   countLaufende,
+  scoreRamsch,
   canKontra,
   canRe,
+  DEFAULT_RULES,
+  Rules,
+  newMatch,
+  dealGame,
+  finishGame,
+  payoutsOf,
+  isTrump,
+  trickWinnerIndex as winIdx,
+  legalBids,
 } from '../index';
 
 const sau = { kind: 'sauspiel', suit: 'E' } as const;
@@ -217,5 +227,98 @@ describe('Komplette Spiele mit Computergegnern', () => {
     }
     expect(played).toBeGreaterThan(300);
     expect(kontras).toBeGreaterThan(0);
+  });
+});
+
+const ALL_RULES: Rules = Object.fromEntries(Object.keys(DEFAULT_RULES).map((k) => [k, true])) as unknown as Rules;
+
+describe('Sonderspiele', () => {
+  it('Geier: nur Ober sind Trumpf, Unter zwischen König und Neun', () => {
+    const g = { kind: 'geier' } as const;
+    expect(trumpOrder(g)).toEqual(['EO', 'GO', 'HO', 'SO']);
+    expect(isTrump('EU', g)).toBe(false);
+    expect(winIdx(['GK', 'GU'], g)).toBe(0);
+    expect(winIdx(['GU', 'G9'], g)).toBe(0);
+  });
+  it('Farbwenz: Unter und Farbe sind Trumpf (11 Trümpfe)', () => {
+    expect(trumpOrder({ kind: 'farbwenz', suit: 'G' })).toHaveLength(11);
+    expect(trumpOrder({ kind: 'farbgeier', suit: 'S' })[0]).toBe('EO');
+  });
+  it('Bettel: keine Trümpfe, Ass > König > Ober > Unter > Zehn', () => {
+    const b = { kind: 'bettel' } as const;
+    expect(trumpOrder(b)).toEqual([]);
+    expect(winIdx(['E10', 'EU'], b)).toBe(1);
+    expect(winIdx(['EO', 'EK', 'EA'], b)).toBe(2);
+  });
+  it('Bettel gewonnen ohne Stich, Brett doppelt; Tout doppelt; Bock', () => {
+    const hands: CardId[][] = [[], [], [], []];
+    const bettel = scoreGame({ contract: { kind: 'bettel', brett: true }, declarer: 0, partner: null, declarerPoints: 0, declarerTricks: 0, initialHands: hands });
+    expect(bettel.declarerWon).toBe(true);
+    expect(bettel.amount).toBe(100);
+    const lost = scoreGame({ contract: { kind: 'bettel' }, declarer: 0, partner: null, declarerPoints: 11, declarerTricks: 1, initialHands: hands, bock: 2 });
+    expect(lost.declarerWon).toBe(false);
+    expect(lost.amount).toBe(100);
+    expect(lost.payouts).toEqual([-300, 100, 100, 100]);
+  });
+  it('Ramsch: wer die meisten Augen hat, zahlt', () => {
+    const r = scoreRamsch([
+      { leader: 0, cards: ['EA', 'GA', 'HA', 'SA'], winner: 0 },
+      { leader: 0, cards: ['E10', 'G7', 'H7', 'S7'], winner: 1 },
+    ] as never);
+    expect(r.losers).toEqual([0]);
+    expect(r.payouts).toEqual([-30, 10, 10, 10]);
+  });
+  it('Muss-Spiel: wer den Eichel-Ober hat, darf nicht weiter sagen', () => {
+    let s = newGame(3, createRng(5), { rules: { ...DEFAULT_RULES, muss: true }, muss: true });
+    for (let i = 0; i < 4; i++) {
+      const p = s.turn;
+      const bids = legalBids(s, p);
+      if (s.hands[p].includes('EO') && !s.bids.some((b) => b.contract)) expect(bids).not.toContain(null);
+      s = applyAction(s, { type: 'bid', player: p, contract: s.hands[p].includes('EO') ? bids.find((b) => b !== null)! : null });
+    }
+    expect(s.phase).not.toBe('finished');
+  });
+  it('Hochzeit: Partner nimmt den Trumpf und gibt eine Karte zurück', () => {
+    const hands: CardId[][] = [
+      ['HO', 'EA', 'E10', 'GA', 'G10', 'SA', 'S10', 'EK'],
+      ['E7', 'E8', 'E9', 'G7', 'G8', 'G9', 'S7', 'S8'],
+      ['EO', 'GO', 'SO', 'EU', 'GU', 'HU', 'SU', 'HA'],
+      ['H10', 'HK', 'H9', 'H8', 'H7', 'GK', 'SK', 'S9'],
+    ];
+    let s: GameState = { ...newGame(3, createRng(1), { rules: { ...DEFAULT_RULES, hochzeit: true } }), hands, initialHands: hands.map((h) => [...h]) };
+    expect(legalBids(s, 0)).toContainEqual({ kind: 'hochzeit' });
+    s = applyAction(s, { type: 'bid', player: 0, contract: { kind: 'hochzeit' } });
+    for (const p of [1, 2, 3]) s = applyAction(s, { type: 'bid', player: p, contract: null });
+    expect(s.phase).toBe('hochzeit');
+    expect(s.turn).toBe(1);
+    s = applyAction(s, { type: 'hochzeit', player: 1, accept: false });
+    s = applyAction(s, { type: 'hochzeit', player: 2, accept: true, give: 'HA' });
+    expect(s.phase).toBe('playing');
+    expect(s.partner).toBe(2);
+    expect(s.hands[0]).toContain('HA');
+    expect(s.hands[0]).not.toContain('HO');
+    expect(s.hands[2]).toContain('HO');
+    expect(s.turn).toBe(0);
+  });
+  it('1000 Spiele mit allen Sonderregeln laufen regelkonform durch', () => {
+    const kinds = new Map<string, number>();
+    let m = newMatch(ALL_RULES);
+    for (let seed = 1; seed <= 1000; seed++) {
+      let s = dealGame(m, createRng(seed * 31));
+      let steps = 0;
+      while (s.phase !== 'finished') {
+        s = applyAction(s, chooseAction(s, s.turn));
+        if (++steps > 120) throw new Error('Endlosschleife');
+      }
+      const r = s.result!;
+      kinds.set(r.kind === 'played' ? r.contract.kind + (('tout' in r.contract && r.contract.tout) ? '-tout' : '') : r.kind, (kinds.get(r.kind === 'played' ? r.contract.kind + (('tout' in r.contract && r.contract.tout) ? '-tout' : '') : r.kind) ?? 0) + 1);
+      expect(payoutsOf(r).reduce((a, b) => a + b, 0)).toBe(0);
+      if (r.kind === 'ramsch') expect(r.points.reduce((a, b) => a + b, 0)).toBe(120);
+      m = finishGame(m, s);
+    }
+    expect(m.totals.reduce((a, b) => a + b, 0)).toBe(0);
+    expect(kinds.get('ramsch') ?? 0).toBeGreaterThan(0);
+    expect(kinds.has('zamgeworfen')).toBe(false);
+    console.log(JSON.stringify(Object.fromEntries(kinds)));
   });
 });

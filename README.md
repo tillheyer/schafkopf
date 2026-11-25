@@ -65,7 +65,13 @@ ausführen, Aktionen der Spieler prüfen und jedem Client nur seine eigene Hand 
   je Laufender +10. Laufende zählen beim Sauspiel/Solo ab 3, beim Wenz ab 2.
   Beim Solo/Wenz zahlen alle drei Gegner an den Spieler.
 - **Kontra/Re:** Kontra darf jeder aus der Gegenpartei geben, solange er selbst noch keine Karte gespielt hat. Re darf die Spielerpartei nach einem Kontra geben, solange der erste Stich läuft. Beides verdoppelt jeweils den Spielwert.
-- Noch nicht enthalten: Klopfen, Tout, Sie, Hochzeit, Geier, Farbwenz, Ramsch.
+- **Sonderregeln (im Menü unter „Spielregeln“ einzeln schaltbar):** Geier, Farbwenz, Farbgeier,
+  Bettel und Bettel Brett, Tout, Sie, Ramsch (mit Durchmarsch), Hochzeit, Bockrunden, Muss-Spiel.
+  Rangfolge beim Reizen: Sauspiel/Hochzeit < Bettel < Farbwenz/Farbgeier < Wenz/Geier < Solo <
+  Bettel Brett < jedes Tout < Sie. Bettel kostet wie ein Solo (Brett doppelt), Tout und Sie doppelt.
+  Ramsch: wer die meisten Augen hat, zahlt jedem den Sauspiel-Tarif. Bock nach Kontra, verlorenem
+  Solo oder Zusammenwerfen für 4 Spiele (×2, überlappend ×4).
+- Noch nicht enthalten: Klopfen, Schlachtbankrennen.
 
 ## Design
 
