@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   CardId,
   Contract,
@@ -122,7 +122,7 @@ export function GameScreen() {
       : `Spiel ${match.gameNo} · ${PLAYER_NAMES[game.dealer]} ${game.dealer === HUMAN ? 'gibst' : 'gibt'}`;
 
   return (
-    <View style={styles.root}>
+    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.title}>Schafkopf</Text>
         <Text style={styles.announce} testID="announcement">{announcement}</Text>
@@ -174,7 +174,7 @@ export function GameScreen() {
       </View>
 
       {game.phase === 'finished' && !shownTrick && <ResultPanel game={game} onNext={nextGame} />}
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -297,9 +297,9 @@ function ResultPanel({ game, onNext }: { game: GameState; onNext: () => void }) 
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.table, paddingTop: 36 },
+  root: { flex: 1, backgroundColor: '#2a1810', paddingTop: 36 },
   header: { alignItems: 'center', paddingHorizontal: 16 },
-  title: { color: COLORS.accent, fontSize: 22, fontWeight: '800', letterSpacing: 1 },
+  title: { color: COLORS.accent, fontSize: 24, fontWeight: '800', letterSpacing: 1, fontFamily: 'Georgia, serif', textShadowColor: '#000', textShadowRadius: 4 },
   announce: { color: COLORS.text, fontSize: 14, marginTop: 2, textAlign: 'center' },
   table: { flex: 1, justifyContent: 'center', paddingHorizontal: 8 },
   middleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -315,19 +315,19 @@ const styles = StyleSheet.create({
   status: { color: COLORS.text, textAlign: 'center', marginTop: 10, fontSize: 15, fontWeight: '600' },
   lastBtn: { alignSelf: 'center', marginTop: 6, paddingHorizontal: 10, paddingVertical: 4 },
   lastBtnText: { color: COLORS.muted, fontSize: 13, textDecorationLine: 'underline' },
-  handArea: { backgroundColor: COLORS.tableDark, paddingTop: 8, paddingBottom: 18, paddingHorizontal: 8 },
+  handArea: { backgroundColor: 'rgba(12,6,3,0.55)', borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.25)', paddingTop: 8, paddingBottom: 18, paddingHorizontal: 8 },
   you: { color: COLORS.text, textAlign: 'center', marginBottom: 6, fontWeight: '600' },
   hand: { flexDirection: 'row', justifyContent: 'center', gap: 4 },
   totals: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10, flexWrap: 'wrap' },
   total: { color: COLORS.muted, fontSize: 12 },
-  bidPanel: { backgroundColor: COLORS.panel, padding: 12, maxHeight: 260 },
+  bidPanel: { backgroundColor: 'rgba(20,10,5,0.85)', padding: 12, maxHeight: 260 },
   panelTitle: { color: COLORS.text, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
   bidButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
   bidBtn: { backgroundColor: COLORS.accent, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8 },
   passBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.muted },
   bidBtnText: { color: '#1b1b1b', fontWeight: '700', fontSize: 14 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  resultPanel: { backgroundColor: COLORS.panel, borderRadius: 14, padding: 20, width: '100%', maxWidth: 420, borderWidth: 1, borderColor: COLORS.accent },
+  resultPanel: { backgroundColor: '#2b1a0f', borderRadius: 14, padding: 20, width: '100%', maxWidth: 420, borderWidth: 1, borderColor: COLORS.accent },
   resultHead: { fontSize: 26, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   resultLine: { color: COLORS.text, fontSize: 15, marginVertical: 2 },
   resultSmall: { color: COLORS.muted, fontSize: 13, marginTop: 6 },

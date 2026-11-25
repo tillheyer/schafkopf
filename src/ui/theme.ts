@@ -11,7 +11,7 @@ export const COLORS = {
   table: '#1f5f3b',
   tableDark: '#164a2d',
   text: '#f4f1e8',
-  muted: '#b9d3c2',
+  muted: '#d9c4a3',
   accent: '#f2c14e',
   card: '#fffdf6',
   panel: '#0f3a22',

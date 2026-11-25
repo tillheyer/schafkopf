@@ -49,3 +49,9 @@ ausführen, Aktionen der Spieler prüfen und jedem Client nur seine eigene Hand 
   je Laufender +10. Laufende zählen beim Sauspiel/Solo ab 3, beim Wenz ab 2.
   Beim Solo/Wenz zahlen alle drei Gegner an den Spieler.
 - Noch nicht enthalten: Klopfen, Kontra/Re, Tout, Sie, Hochzeit, Geier, Farbwenz, Ramsch.
+
+## Design
+
+Die Karten sind im Stil des bayerischen Blatts selbst als SVG gezeichnet (`src/ui/CardFace.tsx`,
+`src/ui/SuitSymbol.tsx`), keine Fremdgrafiken. Der dunkle Holztisch (`assets/images/holz.jpg`)
+ist per Skript erzeugt. Im Browser zeigt `?karten` alle 32 Karten auf einen Blick.
