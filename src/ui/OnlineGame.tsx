@@ -151,14 +151,15 @@ export function OnlineGame({ name, mode, onExit }: { name: string; mode: Mode; o
 
 function Screen({ children }: { children: React.ReactNode }) {
   return (
-    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root}>
+    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root} imageStyle={styles.bgImage}>
       <View style={styles.panel}>{children}</View>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#2a1810' },
+  bgImage: { width: '100%', height: '100%' },
+  root: { overflow: 'hidden',  flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#2a1810' },
   panel: { width: '100%', maxWidth: 380, backgroundColor: 'rgba(18,9,4,0.8)', borderRadius: 14, padding: 20, gap: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(242,193,78,0.3)' },
   big: { color: COLORS.text, fontSize: 20, fontWeight: '800' },
   text: { color: COLORS.text, fontSize: 15, textAlign: 'center' },

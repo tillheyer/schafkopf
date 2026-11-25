@@ -124,7 +124,7 @@ export function GameTable(props: GameTableProps) {
   const at = (rel: number) => (me + rel) % 4;
 
   return (
-    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root}>
+    <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root} imageStyle={styles.bgImage}>
       <View style={styles.header}>
         <View style={styles.headerSide}>
           {props.onExit && (
@@ -302,7 +302,8 @@ function ResultPanel({ game, me, names, onNext, nextHint, nextDisabled }: GameTa
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#2a1810', paddingTop: 36 },
+  bgImage: { width: '100%', height: '100%' },
+  root: { overflow: 'hidden',  flex: 1, backgroundColor: '#2a1810', paddingTop: 36 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   headerSide: { flex: 1 },
   exit: { color: COLORS.muted, fontSize: 15 },
