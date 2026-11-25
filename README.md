@@ -12,6 +12,19 @@ npm run web      # oder im Browser spielen
 npm test         # Tests der Spiellogik
 ```
 
+## Online spielen
+
+- **Web-Version:** wird bei jedem Push auf `main` automatisch auf GitHub Pages veröffentlicht
+  (`.github/workflows/pages.yml`), Adresse: https://tillheyer.github.io/schafkopf/
+  Am Handy über „Zum Home-Bildschirm“ wie eine App ablegen (Android und iPhone).
+- **Server:** `server/` (Node.js + WebSocket). Lokal starten mit `npm run server` (Port 8787).
+  Hosting über Render.com mit `render.yaml` (kostenloser Plan, schläft nach 15 Minuten ohne
+  Nutzung ein; das erste Verbinden dauert dann bis zu einer Minute).
+- **Tische:** Wer einen Tisch erstellt, bekommt einen 4-stelligen Code. Freie Plätze spielt der
+  Computer, Mitspieler können jederzeit einen Computer-Platz übernehmen. Bei Verbindungsabbruch
+  spielt der Computer weiter, bis man mit gleichem Namen zurückkommt.
+- Der Server prüft jeden Zug mit derselben Spiellogik und schickt jedem nur seine eigenen Karten.
+
 ## Aufbau
 
 ```
@@ -21,7 +34,10 @@ src/engine/   Spiellogik ohne UI (reines TypeScript, JSON-serialisierbarer Zusta
   game.ts     Zustand + Reducer: Reizen, erlaubte Karten, Stiche
   scoring.ts  Abrechnung: Tarif, Schneider, Schwarz, Laufende
   ai.ts       Computergegner (regelbasiert)
+  redact.ts   Sicht eines Spielers (fremde Karten verdeckt)
+src/net/      Protokoll und Server-Adresse für den Online-Modus
 src/ui/       Oberfläche (React Native)
+server/       Online-Server (Tische, Computer für freie Plätze)
 ```
 
 Die Spiellogik ist bewusst ein reiner Reducer `applyAction(state, action)`.

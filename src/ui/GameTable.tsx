@@ -1,38 +1,40 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
+  Action,
   CardId,
   Contract,
   GameState,
   Trick,
-  applyAction,
-  chooseAction,
   contractName,
-  createRng,
   legalBids,
   legalCards,
-  newGame,
-  next,
   suitOf,
   suitPower,
   trumpPower,
   SUIT_NAMES,
 } from '../engine';
 import { CardBack, CardView } from './CardView';
-import { COLORS, PLAYER_NAMES, euro } from './theme';
+import { COLORS, euro } from './theme';
 
-const HUMAN = 0;
-const AI_DELAY = 650;
 const TRICK_PAUSE = 1300;
 
-interface Match {
+export interface GameTableProps {
   game: GameState;
+  /** Eigener Platz (0..3); wird unten angezeigt. */
+  me: number;
+  names: string[];
   totals: number[];
   gameNo: number;
-}
-
-function startMatch(): Match {
-  return { game: newGame(3, createRng(Date.now())), totals: [0, 0, 0, 0], gameNo: 1 };
+  onAction: (a: Action) => void;
+  onNext: () => void;
+  /** Zusatz unter dem Ergebnis, z.B. "Warte auf Resi …" */
+  nextHint?: string;
+  nextDisabled?: boolean;
+  /** Kopfzeile rechts, z.B. Tisch-Code und Verlassen. */
+  topRight?: React.ReactNode;
+  onExit?: () => void;
+  offline?: boolean;
 }
 
 /** Hand sortieren: Trümpfe zuerst (stärkste links), dann Farben. */
@@ -47,95 +49,101 @@ function sortHand(hand: CardId[], c: Contract): CardId[] {
   });
 }
 
-function bidLabel(b: Contract | null): string {
+export function bidLabel(b: Contract | null): string {
   if (!b) return 'Weiter';
   if (b.kind === 'sauspiel') return `Sauspiel auf die ${SUIT_NAMES[b.suit]}-Sau`;
   if (b.kind === 'wenz') return 'Wenz';
   return `${SUIT_NAMES[b.suit]}-Solo`;
 }
 
-export function GameScreen() {
-  const [match, setMatch] = useState<Match>(startMatch);
+export function GameTable(props: GameTableProps) {
+  const { game, me, names, totals, gameNo, onAction } = props;
   const [shownTrick, setShownTrick] = useState<Trick | null>(null);
   const [showLast, setShowLast] = useState(false);
   const { width } = useWindowDimensions();
-  const game = match.game;
-  const prevTricks = useRef(0);
+  const prevTricks = useRef(game.tricks.length);
+  const prevGameNo = useRef(gameNo);
 
-  const dispatch = (a: Parameters<typeof applyAction>[1]) =>
-    setMatch((m) => ({ ...m, game: applyAction(m.game, a) }));
+  const who = (p: number) => (p === me ? 'Du' : names[p]);
+  const verb = (p: number, du: string, er: string) => (p === me ? du : er);
+
+  // Neues Spiel: Anzeige zurücksetzen.
+  useEffect(() => {
+    if (gameNo !== prevGameNo.current) {
+      prevGameNo.current = gameNo;
+      prevTricks.current = 0;
+      setShownTrick(null);
+      setShowLast(false);
+    }
+  }, [gameNo]);
 
   // Abgeschlossenen Stich kurz stehen lassen.
   useEffect(() => {
     if (game.tricks.length > prevTricks.current) {
+      prevTricks.current = game.tricks.length;
       setShownTrick(game.tricks[game.tricks.length - 1]);
       const t = setTimeout(() => setShownTrick(null), TRICK_PAUSE);
-      prevTricks.current = game.tricks.length;
       return () => clearTimeout(t);
     }
     prevTricks.current = game.tricks.length;
   }, [game.tricks.length]);
 
-  // Computergegner ziehen lassen.
-  useEffect(() => {
-    if (shownTrick || game.phase === 'finished' || game.turn === HUMAN) return;
-    const t = setTimeout(() => dispatch(chooseAction(game, game.turn)), AI_DELAY);
-    return () => clearTimeout(t);
-  }, [game, shownTrick]);
-
   const sortContract: Contract = game.contract ?? { kind: 'sauspiel', suit: 'E' };
-  const hand = useMemo(() => sortHand(game.hands[HUMAN], sortContract), [game.hands, game.contract]);
-  const legal = !shownTrick ? legalCards(game, HUMAN) : [];
+  const hand = useMemo(() => sortHand(game.hands[me], sortContract), [game.hands, game.contract, me]);
+  const legal = !shownTrick ? legalCards(game, me) : [];
   const cardW = Math.min(64, Math.floor((Math.min(width, 520) - 24) / 8) - 4);
   const tableCardW = Math.min(64, Math.floor(cardW * 1.15));
+  const myTurn = game.turn === me && game.phase !== 'finished';
 
-  const nextGame = () => {
-    setShowLast(false);
-    setMatch((m) => {
-      const payouts = m.game.result?.kind === 'played' ? m.game.result.payouts : [0, 0, 0, 0];
-      return {
-        totals: m.totals.map((t, i) => t + payouts[i]),
-        gameNo: m.gameNo + 1,
-        game: newGame(next(m.game.dealer), createRng(Date.now() + m.gameNo)),
-      };
-    });
-  };
-
-  const tableTrick: Trick | null = showLast && game.tricks.length
-    ? game.tricks[game.tricks.length - 1]
-    : shownTrick ?? game.current;
+  const tableTrick: Trick | null =
+    showLast && game.tricks.length ? game.tricks[game.tricks.length - 1] : shownTrick ?? game.current;
 
   const status = (() => {
     if (game.phase === 'bidding') {
-      return game.turn === HUMAN ? 'Du bist dran: Was spielst du?' : `${PLAYER_NAMES[game.turn]} überlegt …`;
+      return myTurn ? 'Du bist dran: Was spielst du?' : `${names[game.turn]} überlegt …`;
     }
     if (game.phase === 'playing') {
-      if (shownTrick) return `${PLAYER_NAMES[shownTrick.winner!]} ${shownTrick.winner === HUMAN ? 'machst' : 'macht'} den Stich`;
-      return game.turn === HUMAN ? 'Du bist dran' : `${PLAYER_NAMES[game.turn]} ist dran`;
+      if (shownTrick) return `${who(shownTrick.winner!)} ${verb(shownTrick.winner!, 'machst', 'macht')} den Stich`;
+      return myTurn ? 'Du bist dran' : `${names[game.turn]} ist dran`;
     }
     return '';
   })();
 
   const announcement =
     game.contract && game.declarer !== null
-      ? `${PLAYER_NAMES[game.declarer]} ${game.declarer === HUMAN ? 'spielst' : 'spielt'} ${contractName(game.contract)}`
-      : `Spiel ${match.gameNo} · ${PLAYER_NAMES[game.dealer]} ${game.dealer === HUMAN ? 'gibst' : 'gibt'}`;
+      ? `${who(game.declarer)} ${verb(game.declarer, 'spielst', 'spielt')} ${contractName(game.contract)}`
+      : `Spiel ${gameNo} · ${who(game.dealer)} ${verb(game.dealer, 'gibst', 'gibt')}`;
+
+  // Sitzposition relativ zu mir: 0 unten, 1 links, 2 oben, 3 rechts.
+  const at = (rel: number) => (me + rel) % 4;
 
   return (
     <ImageBackground source={require('../../assets/images/holz.jpg')} resizeMode="cover" style={styles.root}>
       <View style={styles.header}>
+        <View style={styles.headerSide}>
+          {props.onExit && (
+            <Pressable onPress={props.onExit} hitSlop={10} testID="exit">
+              <Text style={styles.exit}>‹ Menü</Text>
+            </Pressable>
+          )}
+        </View>
         <Text style={styles.title}>Schafkopf</Text>
-        <Text style={styles.announce} testID="announcement">{announcement}</Text>
+        <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>{props.topRight}</View>
       </View>
+      <Text style={styles.announce} testID="announcement">
+        {announcement}
+      </Text>
 
       <View style={styles.table}>
-        <Seat player={2} game={game} style={styles.seatTop} cardW={cardW * 0.55} />
+        <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={cardW * 0.55} />
         <View style={styles.middleRow}>
-          <Seat player={1} game={game} style={styles.seatSide} cardW={cardW * 0.45} />
-          <TrickArea trick={tableTrick} cardW={tableCardW} />
-          <Seat player={3} game={game} style={styles.seatSide} cardW={cardW * 0.45} />
+          <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={cardW * 0.45} />
+          <TrickArea trick={tableTrick} cardW={tableCardW} me={me} />
+          <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={cardW * 0.45} />
         </View>
-        <Text style={styles.status} testID="status">{status}</Text>
+        <Text style={styles.status} testID="status">
+          {status}
+        </Text>
         {game.phase === 'playing' && game.tricks.length > 0 && !shownTrick && (
           <Pressable onPress={() => setShowLast((v) => !v)} style={styles.lastBtn}>
             <Text style={styles.lastBtnText}>{showLast ? 'Zurück zum Spiel' : 'Letzten Stich zeigen'}</Text>
@@ -143,13 +151,14 @@ export function GameScreen() {
         )}
       </View>
 
-      {game.phase === 'bidding' && game.turn === HUMAN && (
-        <BidPanel game={game} onBid={(c) => dispatch({ type: 'bid', player: HUMAN, contract: c })} />
+      {game.phase === 'bidding' && myTurn && (
+        <BidPanel game={game} me={me} onBid={(c) => onAction({ type: 'bid', player: me, contract: c })} />
       )}
 
       <View style={styles.handArea}>
         <Text style={styles.you}>
-          Du{game.declarer === HUMAN ? ' · Spieler' : ''} · Stiche: {game.tricks.filter((t) => t.winner === HUMAN).length}
+          {names[me]}
+          {game.declarer === me ? ' · Spieler' : ''} · Stiche: {game.tricks.filter((t) => t.winner === me).length}
         </Text>
         <View style={styles.hand}>
           {hand.map((c) => (
@@ -158,66 +167,54 @@ export function GameScreen() {
               card={c}
               width={cardW}
               enabled={legal.includes(c) && !showLast}
-              dimmed={game.phase === 'playing' && game.turn === HUMAN && !shownTrick && !legal.includes(c)}
-              highlight={game.phase === 'playing' && game.turn === HUMAN && legal.includes(c) && !shownTrick}
-              onPress={() => dispatch({ type: 'play', player: HUMAN, card: c })}
+              dimmed={game.phase === 'playing' && myTurn && !shownTrick && !legal.includes(c)}
+              highlight={game.phase === 'playing' && myTurn && legal.includes(c) && !shownTrick}
+              onPress={() => onAction({ type: 'play', player: me, card: c })}
             />
           ))}
         </View>
         <View style={styles.totals}>
-          {PLAYER_NAMES.map((n, i) => (
-            <Text key={n} style={styles.total}>
-              {n}: {euro(match.totals[i])}
+          {names.map((n, i) => (
+            <Text key={i} style={styles.total}>
+              {n}: {euro(totals[i])}
             </Text>
           ))}
         </View>
       </View>
 
-      {game.phase === 'finished' && !shownTrick && <ResultPanel game={game} onNext={nextGame} />}
+      {game.phase === 'finished' && !shownTrick && <ResultPanel {...props} />}
     </ImageBackground>
   );
 }
 
-function Seat({ player, game, style, cardW }: { player: number; game: GameState; style: object; cardW: number }) {
+function Seat({ player, game, names, style, cardW }: { player: number; game: GameState; names: string[]; style: object; cardW: number }) {
   const bid = game.bids.find((b) => b.player === player);
   const tricks = game.tricks.filter((t) => t.winner === player).length;
   const active = game.turn === player && game.phase !== 'finished';
   return (
     <View style={[styles.seat, style]}>
-      <Text style={[styles.seatName, active && { color: COLORS.accent }]}>
-        {PLAYER_NAMES[player]}
+      <Text style={[styles.seatName, active && { color: COLORS.accent }]} numberOfLines={1}>
+        {names[player]}
         {game.dealer === player ? ' (gibt)' : ''}
       </Text>
       {game.phase === 'bidding' && bid && <Text style={styles.bid}>{bidLabel(bid.contract)}</Text>}
-      {game.phase !== 'bidding' && (
-        <>
-          {game.declarer === player && <Text style={styles.badge}>Spieler</Text>}
-          <View style={styles.backs}>
-            {game.hands[player].map((_, i) => (
-              <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.65 }}>
-                <CardBack width={cardW} />
-              </View>
-            ))}
+      {game.phase !== 'bidding' && game.declarer === player && <Text style={styles.badge}>Spieler</Text>}
+      <View style={styles.backs}>
+        {game.hands[player].map((_, i) => (
+          <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.65 }}>
+            <CardBack width={cardW} />
           </View>
-          <Text style={styles.seatInfo}>Stiche: {tricks}</Text>
-        </>
-      )}
-      {game.phase === 'bidding' && (
-        <View style={styles.backs}>
-          {game.hands[player].map((_, i) => (
-            <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.65 }}>
-              <CardBack width={cardW} />
-            </View>
-          ))}
-        </View>
-      )}
+        ))}
+      </View>
+      {game.phase !== 'bidding' && <Text style={styles.seatInfo}>Stiche: {tricks}</Text>}
     </View>
   );
 }
 
-function TrickArea({ trick, cardW }: { trick: Trick | null; cardW: number }) {
-  const slot = (player: number) => {
+function TrickArea({ trick, cardW, me }: { trick: Trick | null; cardW: number; me: number }) {
+  const slot = (rel: number) => {
     if (!trick) return null;
+    const player = (me + rel) % 4;
     const idx = (player - trick.leader + 4) % 4;
     const card = trick.cards[idx];
     return card ? <CardView card={card} width={cardW} highlight={trick.winner === player} /> : null;
@@ -233,8 +230,8 @@ function TrickArea({ trick, cardW }: { trick: Trick | null; cardW: number }) {
   );
 }
 
-function BidPanel({ game, onBid }: { game: GameState; onBid: (c: Contract | null) => void }) {
-  const bids = legalBids(game, HUMAN);
+function BidPanel({ game, me, onBid }: { game: GameState; me: number; onBid: (c: Contract | null) => void }) {
+  const bids = legalBids(game, me);
   return (
     <View style={styles.bidPanel}>
       <Text style={styles.panelTitle}>Deine Ansage</Text>
@@ -254,30 +251,30 @@ function BidPanel({ game, onBid }: { game: GameState; onBid: (c: Contract | null
   );
 }
 
-function ResultPanel({ game, onNext }: { game: GameState; onNext: () => void }) {
+function ResultPanel({ game, me, names, onNext, nextHint, nextDisabled }: GameTableProps) {
   const r = game.result!;
   let body: React.ReactNode;
   if (r.kind === 'zamgeworfen') {
     body = <Text style={styles.resultLine}>Alle haben „weiter“ gesagt. Die Karten werden neu gegeben.</Text>;
   } else {
-    const team = r.declarerTeam.map((p) => PLAYER_NAMES[p]).join(' und ');
-    const humanWon = r.payouts[HUMAN] > 0;
+    const team = r.declarerTeam.map((p) => (p === me ? 'Du' : names[p])).join(' und ');
+    const won = r.payouts[me] > 0;
     body = (
       <>
-        <Text style={[styles.resultHead, { color: humanWon ? COLORS.accent : COLORS.text }]}>
-          {humanWon ? 'Gewonnen!' : 'Verloren'}
-        </Text>
+        <Text style={[styles.resultHead, { color: won ? COLORS.accent : COLORS.text }]}>{won ? 'Gewonnen!' : 'Verloren'}</Text>
         <Text style={styles.resultLine}>
-          {contractName(r.contract)}: {team} {r.declarerTeam.length > 1 ? 'haben' : r.declarer === HUMAN ? 'hast' : 'hat'}{' '}
+          {contractName(r.contract)}: {team} {r.declarerTeam.length > 1 ? 'habt' : r.declarer === me ? 'hast' : 'hat'}{' '}
           {r.declarerPoints} Augen und {r.declarerWon ? 'gewonnen' : 'verloren'}.
         </Text>
-        {r.partner !== null && <Text style={styles.resultLine}>Mitspieler mit der Sau: {PLAYER_NAMES[r.partner]}</Text>}
+        {r.partner !== null && <Text style={styles.resultLine}>Mitspieler mit der Sau: {names[r.partner]}</Text>}
         <Text style={styles.resultLine}>Gegenspieler: {r.opponentPoints} Augen</Text>
-        <Text style={styles.resultSmall}>{r.breakdown.join(' · ')} = {r.amount} Cent</Text>
+        <Text style={styles.resultSmall}>
+          {r.breakdown.join(' · ')} = {r.amount} Cent
+        </Text>
         <View style={{ marginTop: 8 }}>
           {r.payouts.map((p, i) => (
             <Text key={i} style={styles.resultLine}>
-              {PLAYER_NAMES[i]}: {euro(p)}
+              {names[i]}: {euro(p)}
             </Text>
           ))}
         </View>
@@ -288,9 +285,10 @@ function ResultPanel({ game, onNext }: { game: GameState; onNext: () => void }) 
     <View style={styles.overlay}>
       <View style={styles.resultPanel} testID="result">
         {body}
-        <Pressable onPress={onNext} style={styles.nextBtn} testID="next-game">
+        <Pressable onPress={onNext} disabled={nextDisabled} style={[styles.nextBtn, nextDisabled && { opacity: 0.5 }]} testID="next-game">
           <Text style={styles.nextBtnText}>Nächstes Spiel</Text>
         </Pressable>
+        {nextHint ? <Text style={[styles.resultSmall, { textAlign: 'center' }]}>{nextHint}</Text> : null}
       </View>
     </View>
   );
@@ -298,15 +296,17 @@ function ResultPanel({ game, onNext }: { game: GameState; onNext: () => void }) 
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#2a1810', paddingTop: 36 },
-  header: { alignItems: 'center', paddingHorizontal: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
+  headerSide: { flex: 1 },
+  exit: { color: COLORS.muted, fontSize: 15 },
   title: { color: COLORS.accent, fontSize: 24, fontWeight: '800', letterSpacing: 1, fontFamily: 'Georgia, serif', textShadowColor: '#000', textShadowRadius: 4 },
-  announce: { color: COLORS.text, fontSize: 14, marginTop: 2, textAlign: 'center' },
+  announce: { color: COLORS.text, fontSize: 14, marginTop: 2, textAlign: 'center', paddingHorizontal: 16 },
   table: { flex: 1, justifyContent: 'center', paddingHorizontal: 8 },
   middleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   seat: { alignItems: 'center' },
   seatTop: { marginBottom: 6 },
   seatSide: { width: 80 },
-  seatName: { color: COLORS.text, fontWeight: '700', fontSize: 14 },
+  seatName: { color: COLORS.text, fontWeight: '700', fontSize: 14, maxWidth: 120 },
   seatInfo: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   bid: { color: COLORS.accent, fontSize: 12, textAlign: 'center', marginVertical: 2 },
   badge: { color: '#1b1b1b', backgroundColor: COLORS.accent, fontSize: 11, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden', marginVertical: 2 },
