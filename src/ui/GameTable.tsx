@@ -93,6 +93,11 @@ export function GameTable(props: GameTableProps) {
   const legal = !shownTrick ? legalCards(game, me) : [];
   const cardW = Math.min(64, Math.floor((Math.min(width, 520) - 24) / 8) - 4);
   const tableCardW = Math.min(64, Math.floor(cardW * 1.15));
+  // Eigene Hand größer und leicht überlappend, damit die Ecken lesbar bleiben.
+  const handAvail = Math.min(width, 560) - 16;
+  const handW = Math.min(84, Math.floor(handAvail / 5.4));
+  const handN = Math.max(1, hand.length);
+  const overlap = Math.max(0, Math.ceil((handN * handW - handAvail) / Math.max(1, handN - 1)));
   const myTurn = game.turn === me && game.phase !== 'finished';
 
   const tableTrick: Trick | null =
@@ -161,16 +166,17 @@ export function GameTable(props: GameTableProps) {
           {game.declarer === me ? ' · Spieler' : ''} · Stiche: {game.tricks.filter((t) => t.winner === me).length}
         </Text>
         <View style={styles.hand}>
-          {hand.map((c) => (
+          {hand.map((c, i) => (
+            <View key={c} style={{ marginLeft: i === 0 ? 0 : overlap > 0 ? -overlap : 4 }}>
             <CardView
-              key={c}
               card={c}
-              width={cardW}
+              width={handW}
               enabled={legal.includes(c) && !showLast}
               dimmed={game.phase === 'playing' && myTurn && !shownTrick && !legal.includes(c)}
               highlight={game.phase === 'playing' && myTurn && legal.includes(c) && !shownTrick}
               onPress={() => onAction({ type: 'play', player: me, card: c })}
             />
+            </View>
           ))}
         </View>
         <View style={styles.totals}>
@@ -317,7 +323,7 @@ const styles = StyleSheet.create({
   lastBtnText: { color: COLORS.muted, fontSize: 13, textDecorationLine: 'underline' },
   handArea: { backgroundColor: 'rgba(12,6,3,0.55)', borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.25)', paddingTop: 8, paddingBottom: 18, paddingHorizontal: 8 },
   you: { color: COLORS.text, textAlign: 'center', marginBottom: 6, fontWeight: '600' },
-  hand: { flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  hand: { flexDirection: 'row', justifyContent: 'center' },
   totals: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10, flexWrap: 'wrap' },
   total: { color: COLORS.muted, fontSize: 12 },
   bidPanel: { backgroundColor: 'rgba(20,10,5,0.85)', padding: 12, maxHeight: 260 },

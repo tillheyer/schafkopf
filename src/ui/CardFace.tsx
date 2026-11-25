@@ -1,4 +1,6 @@
 import React from 'react';
+import { Image, View } from 'react-native';
+import { CARD_BACK_IMAGE, CARD_IMAGES } from './cardImages';
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { CardId, Rank, Suit, rankOf, suitOf } from '../engine';
 import { SuitSymbol } from './SuitSymbol';
@@ -35,6 +37,21 @@ export function CardFace({ card, width, highlight }: { card: CardId; width: numb
   const suit = suitOf(card);
   const rank = rankOf(card);
   const id = card;
+  const img = CARD_IMAGES[card];
+  if (img) {
+    const h = width * 1.5;
+    return (
+      <View style={{ width, height: h }}>
+        <Image source={img} style={{ width, height: h }} resizeMode="stretch" />
+        {highlight && (
+          <View
+            pointerEvents="none"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: width * 0.07, borderWidth: 2.5, borderColor: '#f2c14e' }}
+          />
+        )}
+      </View>
+    );
+  }
   return (
     <Svg width={width} height={width * 1.5} viewBox={`0 0 ${W} ${H}`}>
       <Defs>
@@ -160,6 +177,9 @@ function FaceCard({ suit, rank }: { suit: Suit; rank: 'O' | 'U' | 'K' }) {
 
 /** Rückseite: dunkelgrünes Rautenmuster mit goldenem Rahmen. */
 export function CardBackFace({ width }: { width: number }) {
+  if (CARD_BACK_IMAGE) {
+    return <Image source={CARD_BACK_IMAGE} style={{ width, height: width * 1.5 }} resizeMode="stretch" />;
+  }
   const lines = [];
   for (let i = -150; i <= 150; i += 12) {
     lines.push(<Line key={`a${i}`} x1={i} y1={0} x2={i + 150} y2={150} stroke="#3f7a4e" strokeWidth={1.2} />);
