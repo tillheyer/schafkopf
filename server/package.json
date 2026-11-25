@@ -1,0 +1,16 @@
+{
+  "name": "schafkopf-server",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "tsx": "4.23.15",
+    "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "@types/node": "22.10.2"
+  }
+}

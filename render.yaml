@@ -1,0 +1,11 @@
+# Blueprint für Render.com: Online-Server für Schafkopf (kostenloser Plan).
+services:
+  - type: web
+    name: schafkopf-server
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: cd server && npm ci
+    startCommand: cd server && npm start
+    healthCheckPath: /
+    autoDeploy: true
