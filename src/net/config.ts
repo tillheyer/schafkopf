@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 /** Standard-Adresse des Online-Servers (Render.com, siehe render.yaml). */
-const DEFAULT_SERVER = 'wss://schafkopf-server.onrender.com';
+const DEFAULT_SERVER = 'wss://schafkopf-server-f2la.onrender.com';
 
 /**
  * Adresse des Online-Servers. Beim Bauen über EXPO_PUBLIC_SERVER_URL überschreibbar.
