@@ -6,6 +6,8 @@ import {
   Contract,
   GameState,
   Trick,
+  canKontra,
+  canRe,
   contractName,
   legalBids,
   legalCards,
@@ -57,6 +59,62 @@ export function bidLabel(b: Contract | null): string {
   return `${SUIT_NAMES[b.suit]}-Solo`;
 }
 
+/** Kurze Beschriftung für die Ansage-Knöpfe. */
+function shortBid(b: Contract | null): string {
+  if (b?.kind === 'sauspiel') return `Auf die ${SUIT_NAMES[b.suit]}-Sau`;
+  return bidLabel(b);
+}
+
+/** Was ein Spieler bei seiner Ansage sagt (Sprechblase). */
+function bidSpeech(b: Contract | null): string {
+  if (!b) return 'Weiter';
+  if (b.kind === 'sauspiel') return `Ich spiel auf die ${SUIT_NAMES[b.suit]}-Sau`;
+  if (b.kind === 'wenz') return 'Wenz!';
+  return `${SUIT_NAMES[b.suit]}-Solo!`;
+}
+
+const BUBBLE_MS = 2800;
+
+/**
+ * Sprechblasen: Ansagen bleiben während des Reizens stehen und verschwinden
+ * kurz danach; Kontra und Re erscheinen für ein paar Sekunden.
+ */
+function useBubbles(game: GameState, gameNo: number): (string | null)[] {
+  const [, setTick] = useState(0);
+  const flashes = useRef<{ player: number; text: string; until: number }[]>([]);
+  const bidsUntil = useRef(0);
+  const prev = useRef({ gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null });
+
+  useEffect(() => {
+    const p = prev.current;
+    const now = Date.now();
+    if (p.gameNo !== gameNo) {
+      flashes.current = [];
+      bidsUntil.current = 0;
+    } else {
+      if (p.phase === 'bidding' && game.phase !== 'bidding') bidsUntil.current = now + BUBBLE_MS;
+      const k = game.kontra ?? null;
+      const r = game.re ?? null;
+      if (k !== null && p.kontra === null) flashes.current.push({ player: k, text: 'Kontra!', until: now + BUBBLE_MS + 400 });
+      if (r !== null && p.re === null) flashes.current.push({ player: r, text: 'Re!', until: now + BUBBLE_MS + 400 });
+    }
+    prev.current = { gameNo, phase: game.phase, kontra: game.kontra ?? null, re: game.re ?? null };
+    const ends = [bidsUntil.current, ...flashes.current.map((f) => f.until)].filter((t) => t > now);
+    setTick((t) => t + 1);
+    if (!ends.length) return;
+    const t = setTimeout(() => setTick((x) => x + 1), Math.min(...ends) - now + 20);
+    return () => clearTimeout(t);
+  }, [gameNo, game.phase, game.kontra, game.re]);
+
+  const now = Date.now();
+  const out: (string | null)[] = [null, null, null, null];
+  if (game.phase === 'bidding' || now < bidsUntil.current) {
+    for (const b of game.bids) out[b.player] = bidSpeech(b.contract);
+  }
+  for (const f of flashes.current) if (f.until > now) out[f.player] = f.text;
+  return out;
+}
+
 export function GameTable(props: GameTableProps) {
   const { game, me, names, totals, gameNo, onAction } = props;
   const [shownTrick, setShownTrick] = useState<Trick | null>(null);
@@ -65,6 +123,7 @@ export function GameTable(props: GameTableProps) {
   const prevTricks = useRef(game.tricks.length);
   const prevGameNo = useRef(gameNo);
 
+  const bubbles = useBubbles(game, gameNo);
   const who = (p: number) => (p === me ? 'Du' : names[p]);
   const verb = (p: number, du: string, er: string) => (p === me ? du : er);
 
@@ -115,10 +174,13 @@ export function GameTable(props: GameTableProps) {
     return '';
   })();
 
+  const doubles = `${(game.kontra ?? null) !== null ? ' · Kontra' : ''}${(game.re ?? null) !== null ? ' · Re' : ''}`;
   const announcement =
     game.contract && game.declarer !== null
-      ? `${who(game.declarer)} ${verb(game.declarer, 'spielst', 'spielt')} ${contractName(game.contract)}`
+      ? `${who(game.declarer)} ${verb(game.declarer, 'spielst', 'spielt')} ${contractName(game.contract)}${doubles}`
       : `Spiel ${gameNo} · ${who(game.dealer)} ${verb(game.dealer, 'gibst', 'gibt')}`;
+  const showKontra = !shownTrick && canKontra(game, me);
+  const showRe = !shownTrick && canRe(game, me);
 
   // Sitzposition relativ zu mir: 0 unten, 1 links, 2 oben, 3 rechts.
   const at = (rel: number) => (me + rel) % 4;
@@ -141,27 +203,41 @@ export function GameTable(props: GameTableProps) {
       </Text>
 
       <View style={styles.table}>
-        <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={22} />
+        <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={22} bubble={bubbles[at(2)]} pos="top" />
         <View style={styles.middleRow}>
-          <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={18} />
+          <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(1)]} pos="left" />
           <TrickArea trick={tableTrick} cardW={tableCardW} me={me} />
-          <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={18} />
+          <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(3)]} pos="right" />
         </View>
         <Text style={styles.status} testID="status">
           {status}
         </Text>
+        {(showKontra || showRe) && (
+          <Pressable
+            onPress={() => onAction({ type: showKontra ? 'kontra' : 're', player: me })}
+            style={({ pressed }) => [styles.kontraBtn, pressed && { opacity: 0.7 }]}
+            testID={showKontra ? 'kontra' : 're'}
+          >
+            <Text style={styles.kontraBtnText}>{showKontra ? 'Kontra geben' : 'Re geben'}</Text>
+          </Pressable>
+        )}
         {game.phase === 'playing' && game.tricks.length > 0 && !shownTrick && (
           <Pressable onPress={() => setShowLast((v) => !v)} style={styles.lastBtn}>
             <Text style={styles.lastBtnText}>{showLast ? 'Zurück zum Spiel' : 'Letzten Stich zeigen'}</Text>
           </Pressable>
         )}
+        {game.phase === 'bidding' && myTurn && (
+          <BidPanel game={game} me={me} onBid={(c) => onAction({ type: 'bid', player: me, contract: c })} />
+        )}
       </View>
 
-      {game.phase === 'bidding' && myTurn && (
-        <BidPanel game={game} me={me} onBid={(c) => onAction({ type: 'bid', player: me, contract: c })} />
-      )}
 
       <View style={styles.handArea}>
+        {bubbles[me] && (
+          <View style={styles.myBubbleWrap} pointerEvents="none">
+            <Bubble text={bubbles[me]!} tail="down" />
+          </View>
+        )}
         <Text style={styles.you}>
           {names[me]}
           {game.declarer === me ? ' · Spieler' : ''} · Stiche: {game.tricks.filter((t) => t.winner === me).length}
@@ -194,17 +270,53 @@ export function GameTable(props: GameTableProps) {
   );
 }
 
-function Seat({ player, game, names, style, cardW }: { player: number; game: GameState; names: string[]; style: object; cardW: number }) {
-  const bid = game.bids.find((b) => b.player === player);
+function Bubble({ text, tail, tailRight, centered }: { text: string; tail: 'down' | 'left'; tailRight?: boolean; centered?: boolean }) {
+  const loud = text === 'Kontra!' || text === 'Re!';
+  const tailStyle =
+    tail === 'down'
+      ? [styles.tailDown, tailRight && { left: undefined, right: 14 }, centered && { left: '50%', marginLeft: -7 }, loud && { borderTopColor: '#c0392b' }]
+      : [styles.tailLeft, loud && { borderRightColor: '#c0392b' }];
+  return (
+    <View style={[styles.bubble, loud && styles.bubbleLoud]} testID="bubble">
+      <Text style={[styles.bubbleText, loud && styles.bubbleTextLoud]}>{text}</Text>
+      <View style={tailStyle} />
+    </View>
+  );
+}
+
+function Seat({
+  player,
+  game,
+  names,
+  style,
+  cardW,
+  bubble,
+  pos,
+}: {
+  player: number;
+  game: GameState;
+  names: string[];
+  style: object;
+  cardW: number;
+  bubble: string | null;
+  pos: 'top' | 'left' | 'right';
+}) {
   const tricks = game.tricks.filter((t) => t.winner === player).length;
   const active = game.turn === player && game.phase !== 'finished';
   return (
-    <View style={[styles.seat, style]}>
+    <View style={[styles.seat, style, bubble ? { zIndex: 20 } : null]}>
+      {bubble && (
+        <View
+          pointerEvents="none"
+          style={[styles.bubbleWrap, pos === 'top' ? styles.bubbleTop : pos === 'left' ? styles.bubbleLeft : styles.bubbleRight]}
+        >
+          <Bubble text={bubble} tail={pos === 'top' ? 'left' : 'down'} tailRight={pos === 'right'} />
+        </View>
+      )}
       <Text style={[styles.seatName, active && { color: COLORS.accent }]} numberOfLines={1}>
         {names[player]}
       </Text>
       {game.dealer === player && <Text style={styles.dealer}>gibt</Text>}
-      {game.phase === 'bidding' && bid && <Text style={styles.bid}>{bidLabel(bid.contract)}</Text>}
       {game.phase !== 'bidding' && game.declarer === player && <Text style={styles.badge}>Spieler</Text>}
       <View style={styles.backs}>
         {game.hands[player].map((_, i) => (
@@ -250,7 +362,7 @@ function BidPanel({ game, me, onBid }: { game: GameState; me: number; onBid: (c:
             style={({ pressed }) => [styles.bidBtn, !b && styles.passBtn, pressed && { opacity: 0.7 }]}
             testID={`bid-${bidLabel(b)}`}
           >
-            <Text style={[styles.bidBtnText, !b && { color: COLORS.text }]}>{bidLabel(b)}</Text>
+            <Text style={[styles.bidBtnText, !b && { color: COLORS.text }]}>{shortBid(b)}</Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -270,7 +382,7 @@ function ResultPanel({ game, me, names, onNext, nextHint, nextDisabled }: GameTa
       <>
         <Text style={[styles.resultHead, { color: won ? COLORS.accent : COLORS.text }]}>{won ? 'Gewonnen!' : 'Verloren'}</Text>
         <Text style={styles.resultLine}>
-          {contractName(r.contract)}: {team} {r.declarerTeam.length > 1 ? 'habt' : r.declarer === me ? 'hast' : 'hat'}{' '}
+          {contractName(r.contract)}: {team} {r.declarerTeam.length > 1 ? (r.declarerTeam.includes(me) ? 'habt' : 'haben') : r.declarer === me ? 'hast' : 'hat'}{' '}
           {r.declarerPoints} Augen und {r.declarerWon ? 'gewonnen' : 'verloren'}.
         </Text>
         {r.partner !== null && <Text style={styles.resultLine}>Mitspieler mit der Sau: {names[r.partner]}</Text>}
@@ -317,7 +429,19 @@ const styles = StyleSheet.create({
   seatName: { color: COLORS.text, fontWeight: '700', fontSize: 13, maxWidth: 120, textAlign: 'center' },
   dealer: { color: COLORS.muted, fontSize: 11, fontStyle: 'italic' },
   seatInfo: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
-  bid: { color: COLORS.accent, fontSize: 12, textAlign: 'center', marginVertical: 2 },
+  bubbleWrap: { position: 'absolute', zIndex: 30 },
+  bubbleTop: { left: '50%', top: -4, marginLeft: 46 },
+  bubbleLeft: { left: 0, bottom: '100%', marginBottom: 6 },
+  bubbleRight: { right: 0, bottom: '100%', marginBottom: 6 },
+  myBubbleWrap: { position: 'absolute', bottom: '100%', left: 12, marginBottom: 6, zIndex: 30, maxWidth: 140 },
+  bubble: { backgroundColor: '#fffaf0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 170, width: 'max-content' as unknown as number, borderWidth: 1.5, borderColor: '#d9c9a3', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 5 },
+  bubbleLoud: { backgroundColor: '#c0392b', borderColor: '#f2c14e' },
+  bubbleText: { color: '#2b1a10', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  bubbleTextLoud: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  tailDown: { position: 'absolute', bottom: -7, left: 14, width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#fffaf0' },
+  tailLeft: { position: 'absolute', left: -8, top: 9, width: 0, height: 0, borderTopWidth: 7, borderBottomWidth: 7, borderRightWidth: 8, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderRightColor: '#fffaf0' },
+  kontraBtn: { alignSelf: 'center', marginTop: 8, backgroundColor: '#c0392b', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 8, borderWidth: 1.5, borderColor: '#f2c14e' },
+  kontraBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   badge: { color: '#1b1b1b', backgroundColor: COLORS.accent, fontSize: 11, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden', marginVertical: 2 },
   backs: { flexDirection: 'row', marginTop: 4 },
   trick: { position: 'relative' },
@@ -329,10 +453,10 @@ const styles = StyleSheet.create({
   hand: { flexDirection: 'row', justifyContent: 'center' },
   totals: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10, flexWrap: 'wrap' },
   total: { color: COLORS.muted, fontSize: 12 },
-  bidPanel: { backgroundColor: 'rgba(20,10,5,0.85)', padding: 12, maxHeight: 260 },
+  bidPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 40, backgroundColor: 'rgba(20,10,5,0.92)', padding: 10, borderTopLeftRadius: 14, borderTopRightRadius: 14, borderWidth: 1, borderBottomWidth: 0, borderColor: 'rgba(242,193,78,0.35)' },
   panelTitle: { color: COLORS.text, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  bidButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  bidBtn: { backgroundColor: COLORS.accent, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8 },
+  bidButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
+  bidBtn: { backgroundColor: COLORS.accent, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 8 },
   passBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.muted },
   bidBtnText: { color: '#1b1b1b', fontWeight: '700', fontSize: 14 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 16 },

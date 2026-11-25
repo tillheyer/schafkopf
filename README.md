@@ -64,7 +64,8 @@ ausführen, Aktionen der Spieler prüfen und jedem Client nur seine eigene Hand 
 - **Tarif:** Sauspiel 10 Cent, Solo/Wenz 50 Cent, Schneider +10, Schwarz +10,
   je Laufender +10. Laufende zählen beim Sauspiel/Solo ab 3, beim Wenz ab 2.
   Beim Solo/Wenz zahlen alle drei Gegner an den Spieler.
-- Noch nicht enthalten: Klopfen, Kontra/Re, Tout, Sie, Hochzeit, Geier, Farbwenz, Ramsch.
+- **Kontra/Re:** Kontra darf jeder aus der Gegenpartei geben, solange er selbst noch keine Karte gespielt hat. Re darf die Spielerpartei nach einem Kontra geben, solange der erste Stich läuft. Beides verdoppelt jeweils den Spielwert.
+- Noch nicht enthalten: Klopfen, Tout, Sie, Hochzeit, Geier, Farbwenz, Ramsch.
 
 ## Design
 

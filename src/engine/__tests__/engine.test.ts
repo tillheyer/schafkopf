@@ -13,6 +13,8 @@ import {
   trickWinnerIndex,
   trumpOrder,
   countLaufende,
+  canKontra,
+  canRe,
 } from '../index';
 
 const sau = { kind: 'sauspiel', suit: 'E' } as const;
@@ -135,9 +137,67 @@ describe('Abrechnung', () => {
   });
 });
 
+describe('Kontra und Re', () => {
+  const initialHands: CardId[][] = [
+    ['EO', 'GO', 'HO', 'E7', 'GA', 'SA', 'HA', 'G7'],
+    ['EA', 'SO', 'E9', 'G8', 'S7', 'S8', 'H7', 'E8'],
+    ['E10', 'EK', 'G9', 'G10', 'S9', 'S10', 'H8', 'H9'],
+    ['EU', 'GU', 'HU', 'SU', 'GK', 'SK', 'HK', 'H10'],
+  ];
+  const playing = (): GameState => ({
+    dealer: 3,
+    initialHands,
+    hands: initialHands.map((h) => [...h]),
+    phase: 'playing',
+    bids: [],
+    turn: 0,
+    contract: sau,
+    declarer: 0,
+    partner: 1,
+    tricks: [],
+    current: { leader: 0, cards: [] },
+    result: null,
+    kontra: null,
+    re: null,
+  });
+  it('nur die Gegenpartei darf Kontra geben, bis sie selbst eine Karte gespielt hat', () => {
+    let s = playing();
+    expect(canKontra(s, 0)).toBe(false);
+    expect(canKontra(s, 1)).toBe(false);
+    expect(canKontra(s, 2)).toBe(true);
+    s = applyAction(s, { type: 'play', player: 0, card: 'G7' });
+    s = applyAction(s, { type: 'play', player: 1, card: 'G8' });
+    s = applyAction(s, { type: 'play', player: 2, card: 'G9' });
+    expect(canKontra(s, 2)).toBe(false);
+    expect(canKontra(s, 3)).toBe(true);
+    // Kontra geht auch, wenn man gerade nicht dran ist.
+    expect(() => applyAction(playing(), { type: 'kontra', player: 3 })).not.toThrow();
+  });
+  it('Re nur nach Kontra und nur von der Spielerpartei', () => {
+    let s = playing();
+    expect(canRe(s, 0)).toBe(false);
+    s = applyAction(s, { type: 'kontra', player: 2 });
+    expect(canKontra(s, 3)).toBe(false);
+    expect(canRe(s, 3)).toBe(false);
+    expect(canRe(s, 1)).toBe(true);
+    s = applyAction(s, { type: 're', player: 0 });
+    expect(s.re).toBe(0);
+    expect(() => applyAction(s, { type: 're', player: 1 })).toThrow();
+  });
+  it('Kontra verdoppelt, Re vervierfacht den Spielwert', () => {
+    const base = { contract: sau, declarer: 0, partner: 1, declarerPoints: 70, declarerTricks: 5, initialHands } as const;
+    expect(scoreGame({ ...base }).amount).toBe(50);
+    expect(scoreGame({ ...base, kontra: true }).amount).toBe(100);
+    const r = scoreGame({ ...base, kontra: true, re: true });
+    expect(r.amount).toBe(200);
+    expect(r.payouts).toEqual([200, 200, -200, -200]);
+  });
+});
+
 describe('Komplette Spiele mit Computergegnern', () => {
   it('1000 zufällige Spiele laufen regelkonform durch', () => {
     let played = 0;
+    let kontras = 0;
     for (let seed = 1; seed <= 1000; seed++) {
       const rng = createRng(seed);
       let s = newGame(seed % 4, rng);
@@ -152,8 +212,10 @@ describe('Komplette Spiele mit Computergegnern', () => {
         expect(s.tricks).toHaveLength(8);
         expect(s.result!.payouts.reduce((a, b) => a + b, 0)).toBe(0);
         expect(s.result!.declarerPoints + s.result!.opponentPoints).toBe(120);
+        if (s.result!.kontra) kontras++;
       }
     }
     expect(played).toBeGreaterThan(300);
+    expect(kontras).toBeGreaterThan(0);
   });
 });

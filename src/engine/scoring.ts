@@ -37,6 +37,8 @@ export interface PlayedResult {
   schneider: boolean;
   schwarz: boolean;
   laufende: number;
+  kontra?: boolean;
+  re?: boolean;
   /** Betrag, den jeder Verlierer an einen Gewinner zahlt (Cent). */
   amount: number;
   /** Gewinn/Verlust je Spieler in Cent; Summe ist 0. */
@@ -71,6 +73,8 @@ export function scoreGame(args: {
   declarerTricks: number;
   initialHands: readonly CardId[][];
   tarif?: Tarif;
+  kontra?: boolean;
+  re?: boolean;
 }): PlayedResult {
   const { contract, declarer, partner, declarerPoints, declarerTricks, initialHands } = args;
   const tarif = args.tarif ?? DEFAULT_TARIF;
@@ -99,6 +103,15 @@ export function scoreGame(args: {
     amount += laufende * tarif.laufender;
     breakdown.push(`${laufende} Laufende: +${laufende * tarif.laufender}`);
   }
+  // Kontra und Re verdoppeln jeweils den ganzen Spielwert.
+  if (args.kontra) {
+    amount *= 2;
+    breakdown.push('Kontra: ×2');
+  }
+  if (args.kontra && args.re) {
+    amount *= 2;
+    breakdown.push('Re: ×2');
+  }
 
   const payouts = [0, 0, 0, 0];
   const sign = declarerWon ? 1 : -1;
@@ -124,6 +137,8 @@ export function scoreGame(args: {
     schneider,
     schwarz,
     laufende,
+    kontra: !!args.kontra,
+    re: !!(args.kontra && args.re),
     amount,
     payouts,
     breakdown,
