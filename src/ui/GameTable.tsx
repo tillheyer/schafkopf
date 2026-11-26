@@ -73,7 +73,7 @@ function shortBid(b: Contract | null): string {
 /** Was ein Spieler bei seiner Ansage sagt (Sprechblase). */
 function bidSpeech(b: Contract | null): string {
   if (!b) return 'Weiter';
-  if (b.kind === 'sauspiel') return `Ich spiel auf die ${SUIT_NAMES[b.suit]}-Sau`;
+  if (b.kind === 'sauspiel') return `Rufe die ${SUIT_NAMES[b.suit]}-Sau`;
   if (b.kind === 'hochzeit') return 'Ich hätt a Hochzeit!';
   return `${contractName(b)}!`;
 }
@@ -341,7 +341,7 @@ export function GameTable(props: GameTableProps) {
   );
 }
 
-function Bubble({ text, tail, tailRight, centered }: { text: string; tail: 'down' | 'left' | 'up'; tailRight?: boolean; centered?: boolean }) {
+function Bubble({ text, tail, tailRight, centered, maxW }: { text: string; tail: 'down' | 'left' | 'up'; tailRight?: boolean; centered?: boolean; maxW?: number }) {
   const loud = text === 'Kontra!' || text === 'Re!';
   const tailStyle =
     tail === 'up'
@@ -350,7 +350,7 @@ function Bubble({ text, tail, tailRight, centered }: { text: string; tail: 'down
       ? [styles.tailDown, tailRight && { left: 'auto', right: 14 }, centered && { left: '50%', marginLeft: -7 }, loud && { borderTopColor: '#c0392b' }]
       : [styles.tailLeft, loud && { borderRightColor: '#c0392b' }];
   return (
-    <View style={[styles.bubble, loud && styles.bubbleLoud]} testID="bubble">
+    <View style={[styles.bubble, loud && styles.bubbleLoud, maxW ? { maxWidth: maxW } : null]} testID="bubble">
       <Text style={[styles.bubbleText, loud && styles.bubbleTextLoud]}>{text}</Text>
       <View style={tailStyle} />
     </View>
@@ -392,7 +392,7 @@ function Seat({
           pointerEvents="none"
           style={[styles.bubbleWrap, pos === 'top' ? styles.bubbleTop : pos === 'left' ? styles.bubbleLeft : styles.bubbleRight]}
         >
-          <Bubble text={bubble} tail={pos === 'top' ? 'up' : 'down'} tailRight={pos === 'right'} />
+          <Bubble text={bubble} tail={pos === 'top' ? 'left' : 'down'} tailRight={pos === 'right'} maxW={pos === 'top' ? 140 : 180} />
         </View>
       )}
       <Text style={[styles.seatName, active && { color: COLORS.accent }]} numberOfLines={1}>
@@ -648,11 +648,11 @@ const styles = StyleSheet.create({
   dealer: { color: COLORS.muted, fontSize: 11, fontStyle: 'italic' },
   seatInfo: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   bubbleWrap: { position: 'absolute', zIndex: 30 },
-  bubbleTop: { top: '100%', left: -120, right: -120, alignItems: 'center', marginTop: 4 },
+  bubbleTop: { left: '50%', top: -4, marginLeft: 46, maxWidth: 140 },
   bubbleLeft: { left: 0, bottom: '100%', marginBottom: 6 },
   bubbleRight: { right: 0, bottom: '100%', marginBottom: 6 },
   myBubbleWrap: { position: 'absolute', bottom: '100%', left: 12, marginBottom: 6, zIndex: 30, maxWidth: 140 },
-  bubble: { backgroundColor: '#fffaf0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 170, width: 'max-content' as unknown as number, borderWidth: 1.5, borderColor: '#d9c9a3', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 5 },
+  bubble: { backgroundColor: '#fffaf0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 180, width: 'max-content' as unknown as number, borderWidth: 1.5, borderColor: '#d9c9a3', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 5 },
   bubbleLoud: { backgroundColor: '#c0392b', borderColor: '#f2c14e' },
   bubbleText: { color: '#2b1a10', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   bubbleTextLoud: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
