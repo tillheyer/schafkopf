@@ -19,6 +19,10 @@ import {
   SUIT_NAMES,
 } from '../engine';
 import { CardBack, CardView } from './CardView';
+import { FlyIn } from './anim';
+
+/** Wie lange nach dem Geben noch die Austeil-Animation läuft (ms). */
+const DEAL_WINDOW = 700;
 import { COLORS, euro } from './theme';
 
 const TRICK_PAUSE = 1300;
@@ -129,6 +133,9 @@ export function GameTable(props: GameTableProps) {
   const { width, height } = useWindowDimensions();
   const prevTricks = useRef(game.tricks.length);
   const prevGameNo = useRef(gameNo);
+  const dealtAt = useRef(Date.now());
+  if (gameNo !== prevGameNo.current) dealtAt.current = Date.now();
+  const dealing = Date.now() - dealtAt.current < DEAL_WINDOW;
 
   const bubbles = useBubbles(game, gameNo);
   const who = (p: number) => (p === me ? 'Du' : names[p]);
@@ -222,11 +229,11 @@ export function GameTable(props: GameTableProps) {
       </Text>
 
       <View style={styles.table}>
-        <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={22} bubble={bubbles[at(2)]} pos="top" />
+        <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={22} bubble={bubbles[at(2)]} pos="top" gameNo={gameNo} dealing={dealing} />
         <View style={styles.middleRow}>
-          <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(1)]} pos="left" />
-          <TrickArea trick={tableTrick} cardW={tableCardW} me={me} />
-          <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(3)]} pos="right" />
+          <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(1)]} pos="left" gameNo={gameNo} dealing={dealing} />
+          <TrickArea trick={tableTrick} cardW={tableCardW} me={me} animate={!showLast} />
+          <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(3)]} pos="right" gameNo={gameNo} dealing={dealing} />
         </View>
         <Text style={styles.status} testID="status">
           {status}
@@ -272,7 +279,16 @@ export function GameTable(props: GameTableProps) {
         </Text>
         <View style={styles.hand}>
           {hand.map((c, i) => (
-            <View key={c} style={{ marginLeft: i === 0 ? 0 : overlap > 0 ? -overlap : 4 }}>
+            <View key={`${gameNo}-${c}`} style={{ marginLeft: i === 0 ? 0 : overlap > 0 ? -overlap : 4 }}>
+            <FlyIn
+              animate={dealing}
+              spreadX
+              dx={-(i * (overlap > 0 ? handW - overlap : handW + 4) + handW / 2 - (handW + (handN - 1) * (overlap > 0 ? handW - overlap : handW + 4)) / 2)}
+              dy={-Math.round(height * 0.32)}
+              scaleFrom={0.6}
+              duration={420}
+              delay={120}
+            >
             <CardView
               card={c}
               width={handW}
@@ -285,6 +301,7 @@ export function GameTable(props: GameTableProps) {
                   : onAction({ type: 'play', player: me, card: c })
               }
             />
+            </FlyIn>
             </View>
           ))}
         </View>
@@ -324,7 +341,11 @@ function Seat({
   cardW,
   bubble,
   pos,
+  gameNo,
+  dealing,
 }: {
+  gameNo: number;
+  dealing: boolean;
   player: number;
   game: GameState;
   names: string[];
@@ -363,8 +384,17 @@ function Seat({
               </View>
             ))
           : game.hands[player].map((_, i) => (
-              <View key={i} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.72 }}>
-                <CardBack width={cardW} />
+              <View key={`${gameNo}-${i}`} style={{ marginLeft: i === 0 ? 0 : -cardW * 0.72 }}>
+                <FlyIn
+                  animate={dealing}
+                  dx={pos === 'left' ? 110 : pos === 'right' ? -110 : 0}
+                  dy={pos === 'top' ? 140 : 0}
+                  scaleFrom={1.6}
+                  duration={300}
+                  delay={60 + i * 12}
+                >
+                  <CardBack width={cardW} />
+                </FlyIn>
               </View>
             ))}
       </View>
@@ -373,15 +403,27 @@ function Seat({
   );
 }
 
-function TrickArea({ trick, cardW, me }: { trick: Trick | null; cardW: number; me: number }) {
+function TrickArea({ trick, cardW, me, animate }: { trick: Trick | null; cardW: number; me: number; animate: boolean }) {
+  const h = cardW * 1.5;
+  // Woher die Karte angeflogen kommt: von unten (ich), links, oben, rechts.
+  const from = [
+    { dx: 0, dy: h * 1.8 },
+    { dx: -cardW * 1.8, dy: 0 },
+    { dx: 0, dy: -h * 1.2 },
+    { dx: cardW * 1.8, dy: 0 },
+  ];
   const slot = (rel: number) => {
     if (!trick) return null;
     const player = (me + rel) % 4;
     const idx = (player - trick.leader + 4) % 4;
     const card = trick.cards[idx];
-    return card ? <CardView card={card} width={cardW} highlight={trick.winner === player} /> : null;
+    if (!card) return null;
+    return (
+      <FlyIn key={card} animate={animate} dx={from[rel].dx} dy={from[rel].dy} scaleFrom={rel === 0 ? 1.1 : 0.7} duration={190}>
+        <CardView card={card} width={cardW} highlight={trick.winner === player} />
+      </FlyIn>
+    );
   };
-  const h = cardW * 1.5;
   return (
     <View style={[styles.trick, { width: cardW * 2.6, height: h * 2.3 }]} testID="trick">
       <View style={{ position: 'absolute', top: 0, alignSelf: 'center' }}>{slot(2)}</View>
