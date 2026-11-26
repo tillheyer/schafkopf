@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   btnGhostText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
   off: { opacity: 0.45 },
   joinRow: { flexDirection: 'row', gap: 8 },
-  codeInput: { flex: 1, letterSpacing: 4, fontWeight: '700', textAlign: 'center' },
+  codeInput: { flex: 1, minWidth: 0, width: 0, letterSpacing: 4, fontWeight: '700', textAlign: 'center' },
   joinBtn: { paddingHorizontal: 18 },
   rulesBtn: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.2)', alignItems: 'center' },
   rulesTitle: { color: COLORS.accent, fontWeight: '700', fontSize: 15 },
