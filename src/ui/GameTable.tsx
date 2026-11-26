@@ -20,6 +20,7 @@ import {
 } from '../engine';
 import { CardBack, CardView } from './CardView';
 import { Collect, FlyIn } from './anim';
+import { playSound } from './sound';
 
 /** Wie lange nach dem Geben noch die Austeil-Animation läuft (ms). */
 const DEAL_WINDOW = 900;
@@ -128,6 +129,28 @@ function useBubbles(game: GameState, gameNo: number): (string | null)[] {
   return out;
 }
 
+/** Geräusche passend zu dem, was am Tisch passiert. */
+function useGameSounds(game: GameState, gameNo: number, me: number, resultVisible: boolean) {
+  const played = game.tricks.length * 4 + (game.current?.cards.length ?? 0);
+  const prev = useRef<{ gameNo: number; played: number; bids: number; kontra: number | null; re: number | null; result: boolean } | null>(null);
+  useEffect(() => {
+    const p = prev.current;
+    const now = { gameNo, played, bids: game.bids.length, kontra: game.kontra ?? null, re: game.re ?? null, result: resultVisible };
+    prev.current = now;
+    if (!p || p.gameNo !== gameNo) {
+      if (game.phase !== 'finished') playSound('deal');
+      return;
+    }
+    if (now.played > p.played) playSound('card');
+    if (now.bids > p.bids) playSound(game.bids[game.bids.length - 1].contract ? 'bid' : 'pass');
+    if (now.kontra !== null && p.kontra === null) playSound('kontra');
+    if (now.re !== null && p.re === null) playSound('re');
+    if (now.result && !p.result && game.result && game.result.kind !== 'zamgeworfen') {
+      playSound(game.result.payouts[me] > 0 ? 'win' : 'lose');
+    }
+  }, [gameNo, played, game.bids.length, game.kontra, game.re, resultVisible]);
+}
+
 export function GameTable(props: GameTableProps) {
   const { game, me, names, totals, gameNo, onAction } = props;
   const [shownTrick, setShownTrick] = useState<Trick | null>(null);
@@ -159,7 +182,10 @@ export function GameTable(props: GameTableProps) {
     if (game.tricks.length > prevTricks.current) {
       prevTricks.current = game.tricks.length;
       setShownTrick(game.tricks[game.tricks.length - 1]);
-      const t1 = setTimeout(() => setCollecting(true), TRICK_PAUSE - COLLECT_MS);
+      const t1 = setTimeout(() => {
+        setCollecting(true);
+        playSound('collect');
+      }, TRICK_PAUSE - COLLECT_MS);
       const t = setTimeout(() => {
         setShownTrick(null);
         setCollecting(false);
@@ -190,6 +216,8 @@ export function GameTable(props: GameTableProps) {
   const justFinished = game.tricks.length > prevTricks.current ? game.tricks[game.tricks.length - 1] : null;
   const tableTrick: Trick | null =
     showLast && game.tricks.length ? game.tricks[game.tricks.length - 1] : shownTrick ?? justFinished ?? game.current;
+
+  useGameSounds(game, gameNo, me, game.phase === 'finished' && !shownTrick && !justFinished);
 
   const status = (() => {
     if (game.phase === 'bidding') {
