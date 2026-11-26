@@ -19,13 +19,15 @@ import {
   SUIT_NAMES,
 } from '../engine';
 import { CardBack, CardView } from './CardView';
-import { FlyIn } from './anim';
+import { Collect, FlyIn } from './anim';
 
 /** Wie lange nach dem Geben noch die Austeil-Animation läuft (ms). */
-const DEAL_WINDOW = 700;
+const DEAL_WINDOW = 900;
 import { COLORS, euro } from './theme';
 
 const TRICK_PAUSE = 1300;
+/** Am Ende der Pause wandert der Stich zum Gewinner (ms). */
+const COLLECT_MS = 320;
 const SIDE_W = 60;
 
 export interface GameTableProps {
@@ -130,6 +132,7 @@ export function GameTable(props: GameTableProps) {
   const { game, me, names, totals, gameNo, onAction } = props;
   const [shownTrick, setShownTrick] = useState<Trick | null>(null);
   const [showLast, setShowLast] = useState(false);
+  const [collecting, setCollecting] = useState(false);
   const { width, height } = useWindowDimensions();
   const prevTricks = useRef(game.tricks.length);
   const prevGameNo = useRef(gameNo);
@@ -156,8 +159,15 @@ export function GameTable(props: GameTableProps) {
     if (game.tricks.length > prevTricks.current) {
       prevTricks.current = game.tricks.length;
       setShownTrick(game.tricks[game.tricks.length - 1]);
-      const t = setTimeout(() => setShownTrick(null), TRICK_PAUSE);
-      return () => clearTimeout(t);
+      const t1 = setTimeout(() => setCollecting(true), TRICK_PAUSE - COLLECT_MS);
+      const t = setTimeout(() => {
+        setShownTrick(null);
+        setCollecting(false);
+      }, TRICK_PAUSE);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t);
+      };
     }
     prevTricks.current = game.tricks.length;
   }, [game.tricks.length]);
@@ -175,8 +185,11 @@ export function GameTable(props: GameTableProps) {
   const myTurn = game.turn === me && game.phase !== 'finished';
   const answeringHochzeit = canAnswerHochzeit(game, me);
 
+  // Gerade fertig gewordener Stich: sofort anzeigen (nicht erst nach dem Effekt),
+  // sonst wäre der Tisch einen Moment leer und die Karten flögen neu herein.
+  const justFinished = game.tricks.length > prevTricks.current ? game.tricks[game.tricks.length - 1] : null;
   const tableTrick: Trick | null =
-    showLast && game.tricks.length ? game.tricks[game.tricks.length - 1] : shownTrick ?? game.current;
+    showLast && game.tricks.length ? game.tricks[game.tricks.length - 1] : shownTrick ?? justFinished ?? game.current;
 
   const status = (() => {
     if (game.phase === 'bidding') {
@@ -232,12 +245,20 @@ export function GameTable(props: GameTableProps) {
         <Seat player={at(2)} game={game} names={names} style={styles.seatTop} cardW={22} bubble={bubbles[at(2)]} pos="top" gameNo={gameNo} dealing={dealing} />
         <View style={styles.middleRow}>
           <Seat player={at(1)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(1)]} pos="left" gameNo={gameNo} dealing={dealing} />
-          <TrickArea trick={tableTrick} cardW={tableCardW} me={me} animate={!showLast} />
+          <TrickArea
+            trick={tableTrick}
+            cardW={tableCardW}
+            me={me}
+            animate={!showLast}
+            collectTo={collecting && shownTrick && !showLast ? (shownTrick.winner! - me + 4) % 4 : null}
+          />
           <Seat player={at(3)} game={game} names={names} style={styles.seatSide} cardW={18} bubble={bubbles[at(3)]} pos="right" gameNo={gameNo} dealing={dealing} />
         </View>
         <Text style={styles.status} testID="status">
           {status}
         </Text>
+        {/* Feste Höhe, damit der Tisch nicht springt, wenn Knöpfe erscheinen oder verschwinden. */}
+        <View style={styles.controls}>
         {answeringHochzeit && (
           <Pressable
             onPress={() => onAction({ type: 'hochzeit', player: me, accept: false })}
@@ -256,11 +277,12 @@ export function GameTable(props: GameTableProps) {
             <Text style={styles.kontraBtnText}>{showKontra ? 'Kontra geben' : 'Re geben'}</Text>
           </Pressable>
         )}
-        {game.phase === 'playing' && game.tricks.length > 0 && !shownTrick && (
+        {game.phase === 'playing' && game.tricks.length > 0 && !shownTrick && !showKontra && !showRe && (
           <Pressable onPress={() => setShowLast((v) => !v)} style={styles.lastBtn}>
             <Text style={styles.lastBtnText}>{showLast ? 'Zurück zum Spiel' : 'Letzten Stich zeigen'}</Text>
           </Pressable>
         )}
+        </View>
         {game.phase === 'bidding' && myTurn && (
           <BidPanel game={game} me={me} onBid={(c) => onAction({ type: 'bid', player: me, contract: c })} />
         )}
@@ -286,8 +308,8 @@ export function GameTable(props: GameTableProps) {
               dx={-(i * (overlap > 0 ? handW - overlap : handW + 4) + handW / 2 - (handW + (handN - 1) * (overlap > 0 ? handW - overlap : handW + 4)) / 2)}
               dy={-Math.round(height * 0.32)}
               scaleFrom={0.6}
-              duration={420}
-              delay={120}
+              duration={950}
+              delay={80}
             >
             <CardView
               card={c}
@@ -314,7 +336,7 @@ export function GameTable(props: GameTableProps) {
         </View>
       </View>
 
-      {game.phase === 'finished' && !shownTrick && <ResultPanel {...props} />}
+      {game.phase === 'finished' && !shownTrick && !justFinished && <ResultPanel {...props} />}
     </ImageBackground>
   );
 }
@@ -390,8 +412,8 @@ function Seat({
                   dx={pos === 'left' ? 110 : pos === 'right' ? -110 : 0}
                   dy={pos === 'top' ? 140 : 0}
                   scaleFrom={1.6}
-                  duration={300}
-                  delay={60 + i * 12}
+                  duration={650}
+                  delay={80 + i * 30}
                 >
                   <CardBack width={cardW} />
                 </FlyIn>
@@ -403,7 +425,20 @@ function Seat({
   );
 }
 
-function TrickArea({ trick, cardW, me, animate }: { trick: Trick | null; cardW: number; me: number; animate: boolean }) {
+function TrickArea({
+  trick,
+  cardW,
+  me,
+  animate,
+  collectTo,
+}: {
+  trick: Trick | null;
+  cardW: number;
+  me: number;
+  animate: boolean;
+  /** Relativer Platz des Gewinners, zu dem der Stich gerade wandert. */
+  collectTo: number | null;
+}) {
   const h = cardW * 1.5;
   // Woher die Karte angeflogen kommt: von unten (ich), links, oben, rechts.
   const from = [
@@ -424,12 +459,21 @@ function TrickArea({ trick, cardW, me, animate }: { trick: Trick | null; cardW: 
       </FlyIn>
     );
   };
+  // Ziel beim Einsammeln: etwas weiter als der Platz, von dem die Karten kommen.
+  const to = [
+    { dx: 0, dy: h * 2.2 },
+    { dx: -cardW * 2.4, dy: 0 },
+    { dx: 0, dy: -h * 1.9 },
+    { dx: cardW * 2.4, dy: 0 },
+  ];
   return (
     <View style={[styles.trick, { width: cardW * 2.6, height: h * 2.3 }]} testID="trick">
-      <View style={{ position: 'absolute', top: 0, alignSelf: 'center' }}>{slot(2)}</View>
-      <View style={{ position: 'absolute', left: 0, top: h * 0.65 }}>{slot(1)}</View>
-      <View style={{ position: 'absolute', right: 0, top: h * 0.65 }}>{slot(3)}</View>
-      <View style={{ position: 'absolute', bottom: 0, alignSelf: 'center' }}>{slot(0)}</View>
+      <Collect to={collectTo === null ? null : to[collectTo]}>
+        <View style={{ position: 'absolute', top: 0, alignSelf: 'center' }}>{slot(2)}</View>
+        <View style={{ position: 'absolute', left: 0, top: h * 0.65 }}>{slot(1)}</View>
+        <View style={{ position: 'absolute', right: 0, top: h * 0.65 }}>{slot(3)}</View>
+        <View style={{ position: 'absolute', bottom: 0, alignSelf: 'center' }}>{slot(0)}</View>
+      </Collect>
     </View>
   );
 }
@@ -620,6 +664,7 @@ const styles = StyleSheet.create({
   backs: { flexDirection: 'row', marginTop: 4 },
   trick: { position: 'relative' },
   status: { color: COLORS.text, textAlign: 'center', marginTop: 6, fontSize: 15, fontWeight: '600' },
+  controls: { height: 46, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 10 },
   lastBtn: { alignSelf: 'center', marginTop: 6, paddingHorizontal: 10, paddingVertical: 4 },
   lastBtnText: { color: COLORS.muted, fontSize: 13, textDecorationLine: 'underline' },
   handArea: { backgroundColor: 'rgba(12,6,3,0.55)', borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.25)', paddingTop: 8, paddingBottom: 18, paddingHorizontal: 8 },
