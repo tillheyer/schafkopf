@@ -49,3 +49,29 @@ export function FlyIn({
 
   return <Animated.View style={{ transform: [{ translateX: x }, { translateY: y }, { scale: s }] }}>{children}</Animated.View>;
 }
+
+/**
+ * Fertigen Stich einsammeln: alle Karten wandern gemeinsam zum Gewinner und
+ * werden dabei kleiner und blasser. Ohne Ziel steht alles normal da.
+ */
+export function Collect({ to, children }: { to: { dx: number; dy: number } | null; children: React.ReactNode }) {
+  const p = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!to) {
+      p.setValue(0);
+      return;
+    }
+    const anim = Animated.timing(p, { toValue: 1, duration: 300, easing: Easing.in(Easing.quad), useNativeDriver: native });
+    anim.start();
+    return () => anim.stop();
+  }, [to?.dx, to?.dy, to === null]);
+  const tx = p.interpolate({ inputRange: [0, 1], outputRange: [0, to?.dx ?? 0] });
+  const ty = p.interpolate({ inputRange: [0, 1], outputRange: [0, to?.dy ?? 0] });
+  const sc = p.interpolate({ inputRange: [0, 1], outputRange: [1, 0.35] });
+  const op = p.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0.9, 0] });
+  return (
+    <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: op, transform: [{ translateX: tx }, { translateY: ty }, { scale: sc }] }}>
+      {children}
+    </Animated.View>
+  );
+}
