@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from './theme';
 import { CardView } from './CardView';
-import { Rules } from '../engine';
+import { BotLevel, Rules } from '../engine';
 import { rulesSummary } from './RulesScreen';
 
 export type MenuChoice = { kind: 'local' } | { kind: 'create' } | { kind: 'join'; code: string } | { kind: 'rules' };
 
-export function Menu({ name, setName, initialCode, rules, sound, setSound, onChoose }: {
+export function Menu({ name, setName, initialCode, rules, sound, setSound, level, setLevel, onChoose }: {
   rules: Rules;
+  level: BotLevel;
+  setLevel: (l: BotLevel) => void;
   sound: boolean;
   setSound: (on: boolean) => void;
   name: string;
@@ -49,6 +51,23 @@ export function Menu({ name, setName, initialCode, rules, sound, setSound, onCho
         <Pressable style={[styles.btn, !nameOk && styles.off]} disabled={!nameOk} onPress={() => onChoose({ kind: 'local' })} testID="menu-local">
           <Text style={styles.btnText}>Allein gegen den Computer</Text>
         </Pressable>
+        <View style={styles.levelRow}>
+          <Text style={styles.levelLabel}>Computer</Text>
+          <View style={styles.segment}>
+            {(['normal', 'strong'] as const).map((l) => (
+              <Pressable
+                key={l}
+                style={[styles.segBtn, level === l && styles.segOn]}
+                onPress={() => setLevel(l)}
+                testID={`menu-level-${l}`}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: level === l }}
+              >
+                <Text style={[styles.segText, level === l && styles.segTextOn]}>{l === 'normal' ? 'Normal' : 'Sehr stark'}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
         <Pressable style={[styles.btn, !nameOk && styles.off]} disabled={!nameOk} onPress={() => onChoose({ kind: 'create' })} testID="menu-create">
           <Text style={styles.btnText}>Online-Tisch erstellen</Text>
         </Pressable>
@@ -125,5 +144,12 @@ const styles = StyleSheet.create({
   switchOn: { backgroundColor: COLORS.accent },
   knob: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fbf4e2' },
   knobOn: { transform: [{ translateX: 18 }] },
+  levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: -2 },
+  levelLabel: { color: COLORS.text, fontWeight: '600', fontSize: 15 },
+  segment: { flexDirection: 'row', borderRadius: 9, borderWidth: 1, borderColor: 'rgba(242,193,78,0.45)', overflow: 'hidden' },
+  segBtn: { paddingVertical: 7, paddingHorizontal: 14 },
+  segOn: { backgroundColor: COLORS.accent },
+  segText: { color: COLORS.text, fontWeight: '700', fontSize: 14 },
+  segTextOn: { color: '#1b1b1b' },
   rulesText: { color: COLORS.muted, fontSize: 12, textAlign: 'center', marginTop: 2 },
 });

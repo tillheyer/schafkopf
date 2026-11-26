@@ -208,13 +208,30 @@ export function knownTeammates(s: GameState, me: number): number[] {
   return [];
 }
 
+/** Wen kennt `me` sicher als Gegner? */
+export function knownEnemies(s: GameState, me: number): number[] {
+  const c = s.contract!;
+  if (c.kind === 'ramsch') return [0, 1, 2, 3].filter((x) => x !== me);
+  const mates = knownTeammates(s, me);
+  const d = s.declarer!;
+  const onDeclarerSide = me === d || (me === s.partner && (c.kind === 'sauspiel' || c.kind === 'hochzeit'));
+  const teamKnown = c.kind !== 'sauspiel' || calledAcePlayed(s) || me === s.partner;
+  if (teamKnown) return [0, 1, 2, 3].filter((x) => x !== me && !mates.includes(x));
+  // Sauspiel, Partner noch unbekannt: als Gegenspieler ist nur der Spieler sicher ein Gegner.
+  return onDeclarerSide ? [] : [d];
+}
+
 /** "Kosten" einer Karte: wie ungern man sie hergibt. */
 function cost(card: CardId, c: Contract): number {
   const t = trumpPower(card, c);
   return pointsOf(card) + (t >= 0 ? 6 + t : 0);
 }
 
-export function chooseCard(s: GameState, me: number): CardId {
+/**
+ * `smart`: kleine Verbesserungen, die der starke Computer in seinen Simulationen
+ * verwendet (der normale Computer bleibt, wie er ist).
+ */
+export function chooseCard(s: GameState, me: number, smart = false): CardId {
   const c = s.contract!;
   const legal = legalCards(s, me);
   if (legal.length === 1) return legal[0];
@@ -234,7 +251,8 @@ export function chooseCard(s: GameState, me: number): CardId {
     // Gegenspieler im Sauspiel: gerufene Farbe anspielen, um die Sau zu suchen.
     if (!onDeclarerSide && c.kind === 'sauspiel' && !sauGesucht(s)) {
       const search = legal.filter((x) => effectiveSuit(x, c) === c.suit).sort((a, b) => pointsOf(a) - pointsOf(b));
-      if (search.length) return search[0];
+      // Klug: nicht mit der Zehn suchen, die fiele sonst der Sau zum Opfer.
+      if (search.length && !(smart && pointsOf(search[0]) >= 10)) return search[0];
     }
     const aces = legal.filter((x) => !isTrump(x, c) && rankOf(x) === 'A' && !ledSuits.has(suitOf(x)));
     if (aces.length) return aces[0];
@@ -261,6 +279,9 @@ export function chooseCard(s: GameState, me: number): CardId {
   if (winners.length && !mateWinning) {
     const cheapest = [...winners].sort((a, b) => cost(a, c) - cost(b, c))[0];
     if (isLast || trickPts >= 10 || cost(cheapest, c) < 12) return cheapest;
+    // Liegt sicher die Gegenpartei vorn (z.B. der Spieler hat eine Farbe aufgespielt),
+    // wird gestochen: mit kleinem Trumpf immer, mit einem Ober erst ab ein paar Augen.
+    if (knownEnemies(s, me).includes(winner) && (trumpPower(cheapest, c) < 17 || trickPts >= 4)) return cheapest;
   }
   return byCost[0];
 }
