@@ -341,11 +341,13 @@ export function GameTable(props: GameTableProps) {
   );
 }
 
-function Bubble({ text, tail, tailRight, centered }: { text: string; tail: 'down' | 'left'; tailRight?: boolean; centered?: boolean }) {
+function Bubble({ text, tail, tailRight, centered }: { text: string; tail: 'down' | 'left' | 'up'; tailRight?: boolean; centered?: boolean }) {
   const loud = text === 'Kontra!' || text === 'Re!';
   const tailStyle =
-    tail === 'down'
-      ? [styles.tailDown, tailRight && { left: undefined, right: 14 }, centered && { left: '50%', marginLeft: -7 }, loud && { borderTopColor: '#c0392b' }]
+    tail === 'up'
+      ? [styles.tailUp, loud && { borderBottomColor: '#c0392b' }]
+      : tail === 'down'
+      ? [styles.tailDown, tailRight && { left: 'auto', right: 14 }, centered && { left: '50%', marginLeft: -7 }, loud && { borderTopColor: '#c0392b' }]
       : [styles.tailLeft, loud && { borderRightColor: '#c0392b' }];
   return (
     <View style={[styles.bubble, loud && styles.bubbleLoud]} testID="bubble">
@@ -390,7 +392,7 @@ function Seat({
           pointerEvents="none"
           style={[styles.bubbleWrap, pos === 'top' ? styles.bubbleTop : pos === 'left' ? styles.bubbleLeft : styles.bubbleRight]}
         >
-          <Bubble text={bubble} tail={pos === 'top' ? 'left' : 'down'} tailRight={pos === 'right'} />
+          <Bubble text={bubble} tail={pos === 'top' ? 'up' : 'down'} tailRight={pos === 'right'} />
         </View>
       )}
       <Text style={[styles.seatName, active && { color: COLORS.accent }]} numberOfLines={1}>
@@ -646,7 +648,7 @@ const styles = StyleSheet.create({
   dealer: { color: COLORS.muted, fontSize: 11, fontStyle: 'italic' },
   seatInfo: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   bubbleWrap: { position: 'absolute', zIndex: 30 },
-  bubbleTop: { left: '50%', top: -4, marginLeft: 46 },
+  bubbleTop: { top: '100%', left: -120, right: -120, alignItems: 'center', marginTop: 4 },
   bubbleLeft: { left: 0, bottom: '100%', marginBottom: 6 },
   bubbleRight: { right: 0, bottom: '100%', marginBottom: 6 },
   myBubbleWrap: { position: 'absolute', bottom: '100%', left: 12, marginBottom: 6, zIndex: 30, maxWidth: 140 },
@@ -655,6 +657,7 @@ const styles = StyleSheet.create({
   bubbleText: { color: '#2b1a10', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   bubbleTextLoud: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
   tailDown: { position: 'absolute', bottom: -7, left: 14, width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#fffaf0' },
+  tailUp: { position: 'absolute', top: -8, left: '50%', marginLeft: -7, width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#fffaf0' },
   tailLeft: { position: 'absolute', left: -8, top: 9, width: 0, height: 0, borderTopWidth: 7, borderBottomWidth: 7, borderRightWidth: 8, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderRightColor: '#fffaf0' },
   declineBtn: { alignSelf: 'center', marginTop: 8, borderRadius: 18, paddingHorizontal: 18, paddingVertical: 8, borderWidth: 1.5, borderColor: COLORS.muted },
   declineBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
