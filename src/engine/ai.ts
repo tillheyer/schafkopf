@@ -43,7 +43,7 @@ function handStats(s: GameState, player: number) {
 }
 
 /** Gegenspieler mit sehr gutem Blatt geben Kontra. */
-function wantsKontra(s: GameState, player: number): boolean {
+export function wantsKontra(s: GameState, player: number): boolean {
   const k = s.contract!.kind;
   const h = handStats(s, player);
   if (k === 'sauspiel') return (h.trumps >= 5 && h.obers >= 2) || h.trumps >= 6;
@@ -54,7 +54,7 @@ function wantsKontra(s: GameState, player: number): boolean {
 }
 
 /** Die Spielerpartei antwortet mit Re, wenn sie sich sehr sicher ist. */
-function wantsRe(s: GameState, player: number): boolean {
+export function wantsRe(s: GameState, player: number): boolean {
   const k = s.contract!.kind;
   const h = handStats(s, player);
   if (k === 'sauspiel') return h.trumps >= 6 || (h.trumps >= 5 && h.obers >= 3);

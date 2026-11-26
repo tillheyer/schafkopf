@@ -24,7 +24,7 @@ import {
   newGame,
   next,
 } from './game';
-import { chooseAction as chooseNormal, chooseBid, chooseCard as chooseNormalCard, knownEnemies } from './ai';
+import { chooseAction as chooseNormal, chooseBid, chooseCard as chooseNormalCard, knownEnemies, wantsKontra, wantsRe } from './ai';
 import { redactFor } from './redact';
 import { DEFAULT_TARIF, scoreGame } from './scoring';
 import { Rng, createRng, shuffle } from './rng';
@@ -73,10 +73,13 @@ export function chooseStrongAction(full: GameState, me: number, opts: StrongOpti
   if (s.phase === 'bidding') return { type: 'bid', player: me, contract: chooseStrongBid(s, me, rng, opts) };
   if (s.phase === 'hochzeit') return chooseNormal(s, me);
   if (s.phase !== 'playing') return chooseNormal(s, me);
-  if (canKontra(s, me) || canRe(s, me)) {
+  // Kontra nur mit klar starkem Blatt: die Simulation war hier zu optimistisch
+  // (in Testspielen Kontra in jedem dritten Spiel, davon nur 45 % gewonnen).
+  if (canKontra(s, me) && wantsKontra(s, me)) return { type: 'kontra', player: me };
+  // Re dagegen per Rechnung: gegen ein zu mutiges Kontra lohnt es sich oft.
+  if (canRe(s, me)) {
     const est = estimate(s, me, rng, opts);
-    if (canKontra(s, me) && est.winProb >= 0.68 && est.ev > 0) return { type: 'kontra', player: me };
-    if (canRe(s, me) && est.winProb >= 0.72 && est.ev > 0) return { type: 're', player: me };
+    if (est.winProb >= 0.72 && est.ev > 0) return { type: 're', player: me };
   }
   return { type: 'play', player: me, card: chooseStrongCard(s, me, rng, opts) };
 }
@@ -302,6 +305,42 @@ function dealWeight(s: GameState, me: number, hands: CardId[][], init: CardId[][
   return w;
 }
 
+/** Gewicht einer Verteilung, wenn ein Spieler anders gespielt hat als "nach Lehrbuch". */
+const PL = 0.5;
+
+/**
+ * Wie gut passen die bisher gespielten Karten der anderen zu dieser Verteilung?
+ * Das Spiel wird mit den Händen der Verteilung nachgespielt; hätte ein typischer
+ * Spieler an jener Stelle dieselbe Karte gelegt, ist die Verteilung plausibler.
+ * (Weiche Gewichtung: Menschen spielen nicht immer "nach Lehrbuch".)
+ */
+function playLikelihood(s: GameState, me: number, init: CardId[][], partner: number | null, miss: number): number {
+  const order: { p: number; card: CardId }[] = [];
+  for (const t of allTricks(s)) t.cards.forEach((card, i) => order.push({ p: (t.leader + i) % 4, card }));
+  if (!order.length) return 1;
+  const lead = order[0].p;
+  let st: GameState = {
+    ...s,
+    hands: init.map((h) => [...h]),
+    partner,
+    tricks: [],
+    current: { leader: lead, cards: [] },
+    turn: lead,
+    kontra: null,
+    re: null,
+  };
+  let w = 1;
+  try {
+    for (const { p, card } of order) {
+      if (p !== me && st.hands[p].length > 1 && chooseNormalCard(st, p, true) !== card) w *= miss;
+      st = applyAction(st, { type: 'play', player: p, card });
+    }
+  } catch {
+    return 0.01;
+  }
+  return w;
+}
+
 interface World {
   state: GameState;
   weight: number;
@@ -322,7 +361,8 @@ function sampleWorlds(s: GameState, me: number, n: number, rng: Rng): World[] {
       partner = hands.findIndex((h) => h.includes(a));
     }
     const init = initialHandsOf(s, hands);
-    const weight = dealWeight(s, me, hands, init, partner);
+    let weight = dealWeight(s, me, hands, init, partner);
+    if (PL > 0 && weight > 0) weight *= playLikelihood(s, me, init, partner, PL);
     pool.push({ state: { ...s, hands, initialHands: init, partner }, weight });
   }
   if (!pool.length) return [];
