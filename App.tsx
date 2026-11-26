@@ -8,6 +8,7 @@ import { Menu, MenuChoice } from './src/ui/Menu';
 import { OnlineGame } from './src/ui/OnlineGame';
 import { RulesScreen } from './src/ui/RulesScreen';
 import { Rules, normalizeRules } from './src/engine';
+import { setSoundEnabled } from './src/ui/sound';
 
 function loadRules(): Rules {
   try {
@@ -31,11 +32,21 @@ export default function App() {
     setRulesState(r);
     save('schafkopf.rules', JSON.stringify(r));
   };
+  const [sound, setSoundState] = useState(() => {
+    const on = load('schafkopf.sound') !== '0';
+    setSoundEnabled(on);
+    return on;
+  });
+  const setSound = (on: boolean) => {
+    setSoundState(on);
+    setSoundEnabled(on);
+    save('schafkopf.sound', on ? '1' : '0');
+  };
   const exit = () => setScreen(null);
 
   let content;
   if (showGallery) content = <CardGallery />;
-  else if (!screen) content = <Menu name={name} setName={setName} initialCode={codeFromUrl()} rules={rules} onChoose={setScreen} />;
+  else if (!screen) content = <Menu name={name} setName={setName} initialCode={codeFromUrl()} rules={rules} sound={sound} setSound={setSound} onChoose={setScreen} />;
   else if (screen.kind === 'rules') content = <RulesScreen rules={rules} setRules={setRules} onBack={exit} />;
   else if (screen.kind === 'local') content = <LocalGame name={name.trim()} rules={rules} onExit={exit} />;
   else content = <OnlineGame name={name.trim()} mode={screen} rules={rules} onExit={exit} />;

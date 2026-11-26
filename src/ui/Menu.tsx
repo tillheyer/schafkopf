@@ -7,8 +7,10 @@ import { rulesSummary } from './RulesScreen';
 
 export type MenuChoice = { kind: 'local' } | { kind: 'create' } | { kind: 'join'; code: string } | { kind: 'rules' };
 
-export function Menu({ name, setName, initialCode, rules, onChoose }: {
+export function Menu({ name, setName, initialCode, rules, sound, setSound, onChoose }: {
   rules: Rules;
+  sound: boolean;
+  setSound: (on: boolean) => void;
   name: string;
   setName: (n: string) => void;
   initialCode: string;
@@ -81,6 +83,18 @@ export function Menu({ name, setName, initialCode, rules, onChoose }: {
           <Text style={styles.rulesTitle}>Spielregeln ›</Text>
           <Text style={styles.rulesText} numberOfLines={2}>{rulesSummary(rules)}</Text>
         </Pressable>
+        <Pressable
+          style={styles.soundRow}
+          onPress={() => setSound(!sound)}
+          testID="menu-sound"
+          accessibilityRole="switch"
+          accessibilityState={{ checked: sound }}
+        >
+          <Text style={styles.soundLabel}>Töne</Text>
+          <View style={[styles.switch, sound && styles.switchOn]}>
+            <View style={[styles.knob, sound && styles.knobOn]} />
+          </View>
+        </Pressable>
       </View>
     </ImageBackground>
   );
@@ -105,5 +119,11 @@ const styles = StyleSheet.create({
   joinBtn: { paddingHorizontal: 18 },
   rulesBtn: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(242,193,78,0.2)', alignItems: 'center' },
   rulesTitle: { color: COLORS.accent, fontWeight: '700', fontSize: 15 },
+  soundRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 4 },
+  soundLabel: { color: COLORS.text, fontWeight: '600', fontSize: 15 },
+  switch: { width: 42, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', padding: 3 },
+  switchOn: { backgroundColor: COLORS.accent },
+  knob: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fbf4e2' },
+  knobOn: { transform: [{ translateX: 18 }] },
   rulesText: { color: COLORS.muted, fontSize: 12, textAlign: 'center', marginTop: 2 },
 });
