@@ -6,6 +6,7 @@ import {
   effectiveSuit,
   isSoloLike,
   isTout,
+  suitPower,
   isTrump,
   trickWinnerIndex,
   trumpOrder,
@@ -647,11 +648,19 @@ export function chooseStrongBid(s: GameState, me: number, rng: Rng = Math.random
   const wsum = weights.reduce((a, b) => a + b, 0) || 1;
   let best: Contract | null = null;
   let bestEv = -Infinity;
+  const bettelCache: (boolean | undefined)[] = [];
   for (const c of cands) {
     let ev = 0;
     deals.forEach((hands, i) => {
       if (!weights[i]) return;
       let st = playFrom(s, me, c, hands);
+      if (c.kind === 'bettel') {
+        // Bettel exakt prüfen: Können die Gegner bei offenen Karten einen Stich erzwingen?
+        const forced = (bettelCache[i] ??= bettelForced(hands, me, next(s.dealer), c));
+        const r = scoreGame({ contract: c, declarer: me, partner: null, declarerPoints: 0, declarerTricks: forced ? 1 : 0, initialHands: hands, tarif: s.tarif, bock: s.bock });
+        ev += weights[i] * r.payouts[me];
+        return;
+      }
       let guard = 0;
       while (st.phase === 'playing' && guard++ < 40) {
         st = applyAction(st, { type: 'play', player: st.turn, card: chooseNormalCard(st, st.turn, true) });
@@ -660,6 +669,12 @@ export function chooseStrongBid(s: GameState, me: number, rng: Rng = Math.random
       ev += weights[i] * (r && r.kind !== 'zamgeworfen' ? r.payouts[me] : 0);
     });
     ev /= wsum;
+    if (c.kind === 'bettel') {
+      // Menschen verteidigen einen Bettel oft geschickter als jede Rechnung: nur mit
+      // klar sicherem Blatt (etwa drei von vier Verteilungen gewonnen) ansagen.
+      const full = (s.tarif ?? DEFAULT_TARIF).solo * (c.brett ? 2 : 1) * 3 * (s.bock ?? 1);
+      ev -= 0.5 * full;
+    }
     if (ev > bestEv) {
       bestEv = ev;
       best = c;
@@ -669,6 +684,61 @@ export function chooseStrongBid(s: GameState, me: number, rng: Rng = Math.random
   const margin = best && best.kind === 'sauspiel' ? 1.5 : 6;
   if (canPass && (best === null || bestEv < margin)) return null;
   return best;
+}
+
+/**
+ * Bettel bei offenen Karten: Können die Gegner den Spieler zu einem Stich zwingen?
+ * Jede Farbe wird für sich exakt durchgerechnet (die Gegner kommen immer wieder
+ * zum Ausspielen, weil der Spieler ja nie sticht). Dass der Spieler in einer
+ * Fehlfarbe auch hohe Karten abwerfen kann, wird nicht mitgerechnet – das macht
+ * die Einschätzung eher vorsichtig.
+ */
+export function bettelForced(hands: CardId[][], declarer: number, _leader: number, c: Contract): boolean {
+  const pw = (x: CardId) => suitPower(x, c);
+  for (const su of ['E', 'G', 'H', 'S'] as Suit[]) {
+    const per = hands.map((h) => h.filter((x) => suitOf(x) === su).map(pw).sort((a, b) => a - b));
+    if (!per[declarer].length) continue;
+    if (suitForced(per, declarer, new Map())) return true;
+  }
+  return false;
+}
+
+/** Eine Farbe: Gegner wählen, wer ausspielt; alle bedienen der Reihe nach. */
+function suitForced(per: number[][], d: number, memo: Map<string, boolean>): boolean {
+  if (!per[d].length) return false;
+  const key = per.map((x) => x.join(',')).join('|');
+  const m = memo.get(key);
+  if (m !== undefined) return m;
+  let res = false;
+  for (let lead = 0; lead < 4 && !res; lead++) {
+    if (lead === d || !per[lead].length) continue;
+    res = round(per, d, lead, 0, -1, -1, memo);
+  }
+  memo.set(key, res);
+  return res;
+}
+
+/** Stich in einer Farbe Spieler für Spieler; best = höchste Karte, bestBy = wer sie hat. */
+function round(per: number[][], d: number, lead: number, i: number, best: number, bestBy: number, memo: Map<string, boolean>): boolean {
+  if (i === 4) {
+    if (bestBy === d) return true;
+    return suitForced(per, d, memo);
+  }
+  const p = (lead + i) % 4;
+  const cards = per[p];
+  if (!cards.length) return round(per, d, lead, i + 1, best, bestBy, memo); // abwerfen
+  const isDecl = p === d;
+  const opts = [...new Set(cards)];
+  const order = isDecl ? [...opts].reverse() : opts;
+  for (const x of order) {
+    const idx = cards.indexOf(x);
+    cards.splice(idx, 1);
+    const v = x > best ? round(per, d, lead, i + 1, x, p, memo) : round(per, d, lead, i + 1, best, bestBy, memo);
+    cards.splice(idx, 0, x);
+    if (isDecl && !v) return false;
+    if (!isDecl && v) return true;
+  }
+  return !isDecl ? false : true;
 }
 
 /** Spielstand direkt nach dem Reizen mit Ansage `c` von `me` und den Händen `hands`. */

@@ -16,6 +16,7 @@ import {
   payoutsOf,
   redactFor,
   shuffle,
+  bettelForced,
 } from '../index';
 
 const ALL_RULES: Rules = Object.fromEntries(Object.keys(DEFAULT_RULES).map((k) => [k, true])) as unknown as Rules;
@@ -113,5 +114,23 @@ describe('Sehr starker Computergegner', () => {
     expect(a.type).toBe('play');
     expect(isTrump((a as { card: CardId }).card, s.contract!)).toBe(true);
     expect(isTrump(chooseCard(s, 3), s.contract!)).toBe(true);
+  });
+
+  it('Bettel: sichere Hand hält, Hand mit hohen Karten wird gezwungen', () => {
+    const c = { kind: 'bettel' } as const;
+    const safe: CardId[] = ['E7', 'E8', 'G7', 'G8', 'S7', 'S8', 'H7', 'H8'];
+    const risky: CardId[] = ['EK', 'E9', 'G7', 'G9', 'S7', 'E7', 'SO', 'S10'];
+    const others = (h: CardId[]) => {
+      const rest = shuffle(
+        (['E', 'G', 'H', 'S'] as const).flatMap((su) => ['7', '8', '9', '10', 'U', 'O', 'K', 'A'].map((r) => `${su}${r}` as CardId)).filter((x) => !h.includes(x)),
+        createRng(3),
+      );
+      return [h, rest.slice(0, 8), rest.slice(8, 16), rest.slice(16, 24)];
+    };
+    expect(bettelForced(others(safe), 0, 1, c)).toBe(false);
+    // Eichel 7, 9, König: wer Eichel 8 und 10 hat, zwingt den König heraus.
+    const h = others(risky);
+    const defendersE = h.slice(1).flat().filter((x) => x[0] === 'E');
+    if (defendersE.includes('E8') && defendersE.includes('E10')) expect(bettelForced(h, 0, 1, c)).toBe(true);
   });
 });

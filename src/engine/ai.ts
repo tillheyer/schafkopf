@@ -235,7 +235,7 @@ export function chooseCard(s: GameState, me: number, smart = false): CardId {
   const c = s.contract!;
   const legal = legalCards(s, me);
   if (legal.length === 1) return legal[0];
-  if (c.kind === 'bettel') return bettelCard(s, me, legal);
+  if (c.kind === 'bettel') return smart && me !== s.declarer ? bettelDefense(s, me, legal) : bettelCard(s, me, legal);
   if (c.kind === 'ramsch') return ramschCard(s, me, legal);
   const trick = s.current!;
   const mates = knownTeammates(s, me);
@@ -289,6 +289,57 @@ export function chooseCard(s: GameState, me: number, smart = false): CardId {
 function smearValue(card: CardId, c: Contract): number {
   const t = trumpPower(card, c);
   return t >= 0 ? pointsOf(card) - 8 - t : pointsOf(card);
+}
+
+/**
+ * Klügere Bettel-Abwehr (für die Simulationen des starken Computers): den Spieler
+ * gezielt in Farben zwingen, in denen er nur hohe Karten hat, und selbst nie
+ * über ihm bleiben. Die Hand des Spielers ist beim Brett offen; sonst kennt der
+ * Simulator sie aus der gezogenen Verteilung (eher vorsichtige Einschätzung).
+ */
+function bettelDefense(s: GameState, me: number, legal: CardId[]): CardId {
+  const c = s.contract!;
+  const d = s.declarer!;
+  const pw = (x: CardId) => suitPower(x, c);
+  const asc = [...legal].sort((a, b) => pw(a) - pw(b));
+  const dHand = s.hands[d].filter((x) => x !== ('??' as CardId));
+  const trick = s.current!;
+  if (trick.cards.length === 0) {
+    // Farbe suchen, in der unsere kleinste Karte unter allen Karten des Spielers liegt.
+    let best: CardId | null = null;
+    let bestGap = -Infinity;
+    for (const x of asc) {
+      const theirs = dHand.filter((y) => suitOf(y) === suitOf(x));
+      if (!theirs.length) continue;
+      const low = Math.min(...theirs.map(pw));
+      const gap = low - pw(x);
+      if (gap > bestGap) {
+        bestGap = gap;
+        best = x;
+      }
+    }
+    return best ?? asc[0];
+  }
+  const ledSuit = suitOf(trick.cards[0]);
+  const following = suitOf(legal[0]) === ledSuit && legal.every((x) => suitOf(x) === ledSuit);
+  const dPos = (d - trick.leader + 4) % 4;
+  const dPlayed = dPos < trick.cards.length;
+  const winIdx = trickWinnerIndex(trick.cards, c);
+  if (!following) {
+    // Abwerfen: die höchste Karte loswerden (kleine behält man zum Zwingen).
+    return asc[asc.length - 1];
+  }
+  if (dPlayed) {
+    if (winIdx === dPos) {
+      // Der Spieler liegt vorn: drunter bleiben, so hoch wie möglich.
+      const under = asc.filter((x) => trickWinnerIndex([...trick.cards, x], c) !== trick.cards.length);
+      return under.length ? under[under.length - 1] : asc[asc.length - 1];
+    }
+    // Ein Mitspieler hat den Stich schon: hohe Karte loswerden.
+    return asc[asc.length - 1];
+  }
+  // Der Spieler kommt noch: klein bleiben, damit er drüber muss.
+  return asc[0];
 }
 
 /** Bettel: der Spieler drückt sich unter dem Stich, die Gegner spielen klein. */
