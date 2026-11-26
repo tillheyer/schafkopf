@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { GameState, MatchInfo, Rules, applyAction, chooseAction, createRng, dealGame, finishGame, newMatch } from '../engine';
+import { BotLevel, GameState, MatchInfo, Rules, applyAction, chooseBotAction, createRng, dealGame, finishGame, newMatch } from '../engine';
 import { GameTable } from './GameTable';
 
 const ME = 0;
 const AI_DELAY = 650;
+const STRONG_DELAY = 300;
 const AFTER_TRICK_DELAY = 1800;
 
 interface State {
@@ -12,7 +13,7 @@ interface State {
 }
 
 /** Offline-Spiel: du gegen drei Computergegner. */
-export function LocalGame({ name, rules, onExit }: { name: string; rules: Rules; onExit: () => void }) {
+export function LocalGame({ name, rules, level, onExit }: { name: string; rules: Rules; level: BotLevel; onExit: () => void }) {
   const [st, setSt] = useState<State>(() => {
     const match = newMatch(rules);
     return { match, game: dealGame(match, createRng(Date.now())) };
@@ -23,12 +24,14 @@ export function LocalGame({ name, rules, onExit }: { name: string; rules: Rules;
   useEffect(() => {
     if (game.phase === 'finished' || game.turn === ME) return;
     const afterTrick = game.phase === 'playing' && game.tricks.length > 0 && game.current?.cards.length === 0;
+    // Der starke Computer rechnet selbst ein paar hundert Millisekunden, darum kürzer warten.
+    const delay = afterTrick ? AFTER_TRICK_DELAY : level === 'strong' ? STRONG_DELAY : AI_DELAY;
     const t = setTimeout(
-      () => setSt((m) => ({ ...m, game: applyAction(m.game, chooseAction(m.game, m.game.turn)) })),
-      afterTrick ? AFTER_TRICK_DELAY : AI_DELAY,
+      () => setSt((m) => ({ ...m, game: applyAction(m.game, chooseBotAction(m.game, m.game.turn, level)) })),
+      delay,
     );
     return () => clearTimeout(t);
-  }, [game]);
+  }, [game, level]);
 
   const nextGame = () =>
     setSt((m) => {

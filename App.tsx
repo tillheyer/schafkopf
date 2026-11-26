@@ -7,7 +7,7 @@ import { LocalGame } from './src/ui/LocalGame';
 import { Menu, MenuChoice } from './src/ui/Menu';
 import { OnlineGame } from './src/ui/OnlineGame';
 import { RulesScreen } from './src/ui/RulesScreen';
-import { Rules, normalizeRules } from './src/engine';
+import { BotLevel, Rules, normalizeRules } from './src/engine';
 import { setSoundEnabled } from './src/ui/sound';
 
 function loadRules(): Rules {
@@ -42,13 +42,18 @@ export default function App() {
     setSoundEnabled(on);
     save('schafkopf.sound', on ? '1' : '0');
   };
+  const [level, setLevelState] = useState<BotLevel>(() => (load('schafkopf.level') === 'strong' ? 'strong' : 'normal'));
+  const setLevel = (l: BotLevel) => {
+    setLevelState(l);
+    save('schafkopf.level', l);
+  };
   const exit = () => setScreen(null);
 
   let content;
   if (showGallery) content = <CardGallery />;
-  else if (!screen) content = <Menu name={name} setName={setName} initialCode={codeFromUrl()} rules={rules} sound={sound} setSound={setSound} onChoose={setScreen} />;
+  else if (!screen) content = <Menu name={name} setName={setName} initialCode={codeFromUrl()} rules={rules} sound={sound} setSound={setSound} level={level} setLevel={setLevel} onChoose={setScreen} />;
   else if (screen.kind === 'rules') content = <RulesScreen rules={rules} setRules={setRules} onBack={exit} />;
-  else if (screen.kind === 'local') content = <LocalGame name={name.trim()} rules={rules} onExit={exit} />;
+  else if (screen.kind === 'local') content = <LocalGame name={name.trim()} rules={rules} level={level} onExit={exit} />;
   else content = <OnlineGame name={name.trim()} mode={screen} rules={rules} onExit={exit} />;
 
   return (

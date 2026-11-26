@@ -7,3 +7,4 @@ export * from './ai';
 export * from './redact';
 export * from './options';
 export * from './match';
+export * from './strong';
