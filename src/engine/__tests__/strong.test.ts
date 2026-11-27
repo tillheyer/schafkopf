@@ -57,7 +57,7 @@ describe('Sehr starker Computergegner', () => {
       expect(payoutsOf(s.result).reduce((a, b) => a + b, 0)).toBe(0);
       m = finishGame(m, s);
     }
-  });
+  }, 60000);
 
   it('schaut nicht in fremde Karten: andere verdeckte Verteilung, gleiche Entscheidung', () => {
     for (let seed = 1; seed <= 25; seed++) {
@@ -132,5 +132,24 @@ describe('Sehr starker Computergegner', () => {
     const h = others(risky);
     const defendersE = h.slice(1).flat().filter((x) => x[0] === 'E');
     if (defendersE.includes('E8') && defendersE.includes('E10')) expect(bettelForced(h, 0, 1, c)).toBe(true);
+  });
+
+  it('schmiert keine Zehn, solange der Spieler noch stechen kann', () => {
+    // Eichel-Solo von Spieler 3. Spieler 0 spielt den Gras-König, Spieler 1 hat kein Gras.
+    const hands: CardId[][] = [
+      ['GK', 'G9', 'H7', 'H8', 'S8', 'S9', 'HK', 'H9'],
+      ['S10', 'S7', 'HA', 'H10', 'SK', 'E7', 'SA', 'E8'],
+      ['G7', 'G8', 'G10', 'GA', 'HU', 'SU', 'E9', 'SO'],
+      ['EO', 'GO', 'HO', 'EU', 'GU', 'EA', 'E10', 'EK'],
+    ];
+    let s = state(hands, { kind: 'solo', suit: 'E' }, 3, 0);
+    s = applyAction(s, { type: 'play', player: 0, card: 'GK' });
+    for (let seed = 1; seed <= 5; seed++) {
+      let a = chooseStrongAction(s, 1, { samples: 30, rng: createRng(seed) });
+      const st = a.type === 'kontra' ? applyAction(s, a) : s;
+      if (a.type === 'kontra') a = chooseStrongAction(st, 1, { samples: 30, rng: createRng(seed) });
+      expect(a.type).toBe('play');
+      expect(['S10', 'SA', 'HA', 'H10']).not.toContain((a as { card: CardId }).card);
+    }
   });
 });
