@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from './theme';
 import { CardView } from './CardView';
-import { BotLevel, Rules } from '../engine';
+import { BOT_LEVELS, BotLevel, Rules } from '../engine';
 import { rulesSummary } from './RulesScreen';
 
 export type MenuChoice = { kind: 'local' } | { kind: 'create' } | { kind: 'join'; code: string } | { kind: 'rules' };
@@ -54,7 +54,7 @@ export function Menu({ name, setName, initialCode, rules, sound, setSound, level
         <View style={styles.levelRow}>
           <Text style={styles.levelLabel}>Computer</Text>
           <View style={styles.segment}>
-            {(['normal', 'strong'] as const).map((l) => (
+            {BOT_LEVELS.map(({ level: l, label }) => (
               <Pressable
                 key={l}
                 style={[styles.segBtn, level === l && styles.segOn]}
@@ -63,7 +63,7 @@ export function Menu({ name, setName, initialCode, rules, sound, setSound, level
                 accessibilityRole="radio"
                 accessibilityState={{ checked: level === l }}
               >
-                <Text style={[styles.segText, level === l && styles.segTextOn]}>{l === 'normal' ? 'Normal' : 'Sehr stark'}</Text>
+                <Text style={[styles.segText, level === l && styles.segTextOn]}>{label}</Text>
               </Pressable>
             ))}
           </View>
@@ -144,10 +144,10 @@ const styles = StyleSheet.create({
   switchOn: { backgroundColor: COLORS.accent },
   knob: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fbf4e2' },
   knobOn: { transform: [{ translateX: 18 }] },
-  levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: -2 },
+  levelRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: -2 },
   levelLabel: { color: COLORS.text, fontWeight: '600', fontSize: 15 },
   segment: { flexDirection: 'row', borderRadius: 9, borderWidth: 1, borderColor: 'rgba(242,193,78,0.45)', overflow: 'hidden' },
-  segBtn: { paddingVertical: 7, paddingHorizontal: 14 },
+  segBtn: { paddingVertical: 7, paddingHorizontal: 11 },
   segOn: { backgroundColor: COLORS.accent },
   segText: { color: COLORS.text, fontWeight: '700', fontSize: 14 },
   segTextOn: { color: '#1b1b1b' },

@@ -7,7 +7,7 @@ import { LocalGame } from './src/ui/LocalGame';
 import { Menu, MenuChoice } from './src/ui/Menu';
 import { OnlineGame } from './src/ui/OnlineGame';
 import { RulesScreen } from './src/ui/RulesScreen';
-import { BotLevel, Rules, normalizeRules } from './src/engine';
+import { BotLevel, Rules, isBotLevel, normalizeRules } from './src/engine';
 import { setSoundEnabled } from './src/ui/sound';
 
 function loadRules(): Rules {
@@ -42,7 +42,10 @@ export default function App() {
     setSoundEnabled(on);
     save('schafkopf.sound', on ? '1' : '0');
   };
-  const [level, setLevelState] = useState<BotLevel>(() => (load('schafkopf.level') === 'strong' ? 'strong' : 'normal'));
+  const [level, setLevelState] = useState<BotLevel>(() => {
+    const l = load('schafkopf.level');
+    return isBotLevel(l) ? l : 'normal';
+  });
   const setLevel = (l: BotLevel) => {
     setLevelState(l);
     save('schafkopf.level', l);
