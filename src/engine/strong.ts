@@ -557,7 +557,10 @@ export function chooseStrongCard(s: GameState, me: number, rng: Rng = Math.rando
   opts.onScores?.(legal, avg);
   // Gleichstand: lieber die Karte der Grundregeln, sonst die billigere.
   // Liegt die Gegenpartei mit einem fetten Stich vorn und man kann ihn holen, wird gestochen.
-  const allowed = legal.map((x) => !mustStab(s, me, legal) || stabBonus(s, me, x) > 0);
+  let allowed = legal.map((x) => !mustStab(s, me, legal) || stabBonus(s, me, x) > 0);
+  // Schmieren (Zehn oder Sau auf einen fremden Stich) nur, wenn der Stich sicher beim Mitspieler bleibt.
+  const noRiskySmear = allowed.map((ok, i) => ok && !riskySmear(s, me, legal[i]));
+  if (noRiskySmear.some(Boolean)) allowed = noRiskySmear;
   let best = allowed.indexOf(true);
   for (let i = 0; i < legal.length; i++) {
     if (!allowed[i] || i === best) continue;
@@ -592,6 +595,29 @@ function stabBonus(s: GameState, me: number, x: CardId): number {
 }
 
 /** Fetter Stich (ab 10 Augen) der sicheren Gegenpartei, den man holen kann? */
+/**
+ * Wäre diese Karte ein riskantes Schmieren? Eine Zehn oder Sau, die den Stich nicht
+ * selbst holt, gehört nicht auf einen Stich der Gegenpartei – und auch nicht auf
+ * den eines Mitspielers, wenn nach mir noch ein sicherer Gegner kommt, der ihn mit
+ * einer noch unbekannten Karte holen könnte.
+ */
+function riskySmear(s: GameState, me: number, x: CardId): boolean {
+  const c = s.contract!;
+  const t = s.current!;
+  if (!t.cards.length || pointsOf(x) < 10 || c.kind === 'bettel' || c.kind === 'ramsch') return false;
+  if (trickWinnerIndex([...t.cards, x], c) === t.cards.length) return false; // holt selbst
+  const winIdx = trickWinnerIndex(t.cards, c);
+  const winner = (t.leader + winIdx) % 4;
+  const enemies = knownEnemies(s, me);
+  if (enemies.includes(winner)) return false; // das entscheidet die Rechnung
+  // Nur wenn nach mir noch ein sicherer Gegner kommt, der den Stich noch holen könnte.
+  const after = [1, 2, 3].slice(0, 3 - t.cards.length).map((k) => (me + k) % 4);
+  if (!after.some((p) => enemies.includes(p))) return false;
+  const seen = new Set([...playedCards(s), ...s.hands[me]]);
+  const best = t.cards[winIdx];
+  return ALL.some((y) => !seen.has(y) && beats(y, best, t.cards[0], c));
+}
+
 function mustStab(s: GameState, me: number, legal: CardId[]): boolean {
   const t = s.current!;
   return t.cards.length > 0 && sumPoints(t.cards) >= 10 && legal.some((x) => stabBonus(s, me, x) > 0);
