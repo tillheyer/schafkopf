@@ -60,7 +60,14 @@ export interface StrongOptions {
   onScores?: (cards: CardId[], values: number[]) => void;
   /** Ab wie vielen Karten im Spiel exakt gerechnet wird (Standard 12). */
   exactCards?: number;
+  /** Werte der Karten vor der Auswahl anpassen (MEGA mischt hier die Einschätzung des Netzes ein). */
+  adjust?: (cards: CardId[], values: number[]) => number[];
+  /** Wie beim Durchspielen einer Verteilung die Karten gewählt werden (Standard: schnelle Regeln). */
+  rolloutPolicy?: RolloutPolicy;
 }
+
+/** Kartenwahl beim Durchspielen (jeder Spieler sieht dabei nur seine eigene Sicht der Welt). */
+export type RolloutPolicy = (s: GameState, player: number) => CardId;
 
 const ALL: CardId[] = fullDeck();
 const PLAYERS = [0, 1, 2, 3];
@@ -395,11 +402,12 @@ function utility(end: GameState, me: number): number {
 }
 
 /** Mit den schnellen Ausspielregeln zu Ende spielen. */
-function rollout(s: GameState, me: number): number {
+function rollout(s: GameState, me: number, policy?: RolloutPolicy): number {
   let st = s;
   let guard = 0;
   while (st.phase === 'playing' && guard++ < 40) {
-    st = applyAction(st, { type: 'play', player: st.turn, card: chooseNormalCard(st, st.turn, true) });
+    const card = policy ? policy(st, st.turn) : chooseNormalCard(st, st.turn, true);
+    st = applyAction(st, { type: 'play', player: st.turn, card });
   }
   return utility(st, me);
 }
@@ -520,11 +528,11 @@ function remainingCards(s: GameState): number {
 }
 
 /** Wert jeder Karte in einer Welt. */
-function evaluateMoves(w: GameState, me: number, moves: CardId[], exact = DD_CARDS): number[] {
+function evaluateMoves(w: GameState, me: number, moves: CardId[], exact = DD_CARDS, policy?: RolloutPolicy): number[] {
   if (ddSupported(w.contract!) && remainingCards(w) <= exact) return ddValues(w, me, moves);
   return moves.map((x) => {
     const st = applyAction(w, { type: 'play', player: me, card: x });
-    return st.phase === 'finished' ? utility(st, me) : rollout(st, me);
+    return st.phase === 'finished' ? utility(st, me) : rollout(st, me, policy);
   });
 }
 
@@ -544,7 +552,7 @@ export function chooseStrongCard(s: GameState, me: number, rng: Rng = Math.rando
     const batch = sampleWorlds(s, me, Math.min(12, target - used), rng);
     if (!batch.length) break;
     for (const w of batch) {
-      const vals = evaluateMoves(w.state, me, legal, opts.exactCards);
+      const vals = evaluateMoves(w.state, me, legal, opts.exactCards, opts.rolloutPolicy);
       vals.forEach((v, i) => (totals[i] += v));
       used++;
     }
@@ -553,8 +561,9 @@ export function chooseStrongCard(s: GameState, me: number, rng: Rng = Math.rando
   if (!used) return fallback;
   // Kleiner Vorschuss für die Karte der Grundregeln: dämpft Zufallsrauschen der Stichprobe.
   const prior = 1.5;
-  const avg = totals.map((t, i) => t / used + (legal[i] === fallback ? prior : 0) + stabBonus(s, me, legal[i]));
+  let avg = totals.map((t, i) => t / used + (legal[i] === fallback ? prior : 0) + stabBonus(s, me, legal[i]));
   opts.onScores?.(legal, avg);
+  if (opts.adjust) avg = opts.adjust(legal, avg);
   // Gleichstand: lieber die Karte der Grundregeln, sonst die billigere.
   // Liegt die Gegenpartei mit einem fetten Stich vorn und man kann ihn holen, wird gestochen.
   let allowed = legal.map((x) => !mustStab(s, me, legal) || stabBonus(s, me, x) > 0);
@@ -830,13 +839,3 @@ function playFrom(s: GameState, me: number, c: Contract, hands: CardId[][]): Gam
     current: { leader: lead, cards: [] },
   };
 }
-
-// =============================================================== Schwierigkeit
-
-export type BotLevel = 'normal' | 'strong';
-
-/** Zug eines Computergegners in der gewählten Schwierigkeit. */
-export function chooseBotAction(s: GameState, player: number, level: BotLevel = 'normal', opts?: StrongOptions): Action {
-  return level === 'strong' ? chooseStrongAction(s, player, opts) : chooseNormal(s, player);
-}
-

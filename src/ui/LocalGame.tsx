@@ -25,7 +25,7 @@ export function LocalGame({ name, rules, level, onExit }: { name: string; rules:
     if (game.phase === 'finished' || game.turn === ME) return;
     const afterTrick = game.phase === 'playing' && game.tricks.length > 0 && game.current?.cards.length === 0;
     // Der starke Computer rechnet selbst ein paar hundert Millisekunden, darum kürzer warten.
-    const delay = afterTrick ? AFTER_TRICK_DELAY : level === 'strong' ? STRONG_DELAY : AI_DELAY;
+    const delay = afterTrick ? AFTER_TRICK_DELAY : level !== 'normal' ? STRONG_DELAY : AI_DELAY;
     const t = setTimeout(
       () => setSt((m) => ({ ...m, game: applyAction(m.game, chooseBotAction(m.game, m.game.turn, level)) })),
       delay,
