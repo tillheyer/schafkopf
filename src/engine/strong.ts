@@ -50,7 +50,7 @@ import { Rng, createRng, shuffle } from './rng';
  */
 
 export interface StrongOptions {
-  /** Zeitbudget pro Entscheidung in Millisekunden (Standard 450). */
+  /** Zeitbudget pro Entscheidung in Millisekunden (Standard 800). */
   timeMs?: number;
   /** Feste Anzahl Verteilungen (für Tests); überschreibt das Zeitbudget. */
   samples?: number;
@@ -534,7 +534,7 @@ export function chooseStrongCard(s: GameState, me: number, rng: Rng = Math.rando
   const legal = legalCards(s, me);
   if (legal.length === 1) return legal[0];
   const fallback = chooseNormalCard(s, me);
-  const budget = opts.timeMs ?? 450;
+  const budget = opts.timeMs ?? 800;
   const target = opts.samples ?? 48;
   const start = now();
   const totals = legal.map(() => 0);

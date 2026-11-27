@@ -4,7 +4,7 @@ import { GameTable } from './GameTable';
 
 const ME = 0;
 const AI_DELAY = 650;
-const STRONG_DELAY = 300;
+const STRONG_DELAY = 150;
 const AFTER_TRICK_DELAY = 1800;
 
 interface State {

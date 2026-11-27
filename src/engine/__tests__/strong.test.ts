@@ -57,7 +57,7 @@ describe('Sehr starker Computergegner', () => {
       expect(payoutsOf(s.result).reduce((a, b) => a + b, 0)).toBe(0);
       m = finishGame(m, s);
     }
-  });
+  }, 60000);
 
   it('schaut nicht in fremde Karten: andere verdeckte Verteilung, gleiche Entscheidung', () => {
     for (let seed = 1; seed <= 25; seed++) {
