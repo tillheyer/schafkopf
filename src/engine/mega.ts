@@ -24,6 +24,10 @@ export interface MegaOptions extends StrongOptions {
   netOnly?: boolean;
   /** Beim Durchspielen die Karten vom Netz wählen lassen statt mit den schnellen Regeln (Standard: ja). */
   netRollouts?: boolean;
+  /** Kontra, wenn das Netz den eigenen Gewinn höher schätzt als dieser Wert (in Spieleinsätzen). */
+  kontraAt?: number;
+  /** Re, wenn das Netz den eigenen Gewinn höher schätzt als dieser Wert. */
+  reAt?: number;
   /** Anderes Netz verwenden (Training). */
   net?: MegaNet;
   /** Kleineres, schnelleres Netz fürs Durchspielen (Training). */
@@ -69,6 +73,14 @@ export function netPolicy(net = megaNet()): (s: GameState, player: number) => Ca
   };
 }
 
+/** Was das Netz für `me` aus dieser Lage noch erwartet, in Spieleinsätzen (+1 = einfach gewonnen). */
+export function netValue(full: GameState, me: number, net = megaNet()): number {
+  return net.run(encode(redactFor(full, me), me)).value;
+}
+
+export const KONTRA_AT = 0.3;
+export const RE_AT = 0.3;
+
 export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions = {}): Action {
   const net = opts.net ?? megaNet();
   if (full.phase === 'playing' && full.turn === me) {
@@ -91,5 +103,13 @@ export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions 
     return values.map((v, i) => (1 - mix) * v + mix * nn[i]);
   };
   const rolloutPolicy = opts.netRollouts !== false ? netPolicy(opts.rolloutNet ?? (opts.net ? net : megaRolloutNet())) : opts.rolloutPolicy;
-  return chooseStrongAction(full, me, { ...opts, adjust, rolloutPolicy });
+  const kontraAt = opts.kontraAt ?? KONTRA_AT;
+  const reAt = opts.reAt ?? RE_AT;
+  return chooseStrongAction(full, me, {
+    ...opts,
+    adjust,
+    rolloutPolicy,
+    kontra: opts.kontra ?? ((st, p) => netValue(st, p, net) > kontraAt),
+    re: opts.re ?? ((st, p) => netValue(st, p, net) > reAt),
+  });
 }

@@ -64,6 +64,11 @@ export interface StrongOptions {
   adjust?: (cards: CardId[], values: number[]) => number[];
   /** Wie beim Durchspielen einer Verteilung die Karten gewählt werden (Standard: schnelle Regeln). */
   rolloutPolicy?: RolloutPolicy;
+  /** Eigene Entscheidung für Kontra/Re statt der eingebauten (MEGA fragt hier das Netz). */
+  kontra?: (s: GameState, me: number) => boolean;
+  re?: (s: GameState, me: number) => boolean;
+  /** Sicherheitsabstand beim Reizen in Cent (Standard: Sauspiel 1,5, sonst 6). */
+  bidMargin?: { sauspiel: number; other: number };
 }
 
 /** Kartenwahl beim Durchspielen (jeder Spieler sieht dabei nur seine eigene Sicht der Welt). */
@@ -82,9 +87,11 @@ export function chooseStrongAction(full: GameState, me: number, opts: StrongOpti
   if (s.phase !== 'playing') return chooseNormal(s, me);
   // Kontra nur mit klar starkem Blatt: die Simulation war hier zu optimistisch
   // (in Testspielen Kontra in jedem dritten Spiel, davon nur 45 % gewonnen).
-  if (canKontra(s, me) && wantsKontra(s, me)) return { type: 'kontra', player: me };
+  if (canKontra(s, me) && (opts.kontra ? opts.kontra(s, me) : wantsKontra(s, me))) return { type: 'kontra', player: me };
   // Re dagegen per Rechnung: gegen ein zu mutiges Kontra lohnt es sich oft.
-  if (canRe(s, me)) {
+  if (canRe(s, me) && opts.re) {
+    if (opts.re(s, me)) return { type: 're', player: me };
+  } else if (canRe(s, me)) {
     const est = estimate(s, me, rng, opts);
     if (est.winProb >= 0.72 && est.ev > 0) return { type: 're', player: me };
   }
@@ -647,7 +654,8 @@ function estimate(s: GameState, me: number, rng: Rng, opts: StrongOptions): { ev
     let st = w.state;
     let guard = 0;
     while (st.phase === 'playing' && guard++ < 40) {
-      st = applyAction(st, { type: 'play', player: st.turn, card: chooseNormalCard(st, st.turn, true) });
+      const card = opts.rolloutPolicy ? opts.rolloutPolicy(st, st.turn) : chooseNormalCard(st, st.turn, true);
+      st = applyAction(st, { type: 'play', player: st.turn, card });
     }
     const u = utility(st, me);
     ev += u;
@@ -737,8 +745,9 @@ export function chooseStrongBid(s: GameState, me: number, rng: Rng = Math.random
         return;
       }
       let guard = 0;
+      const policy = opts.rolloutPolicy ?? ((x: GameState, p: number) => chooseNormalCard(x, p, true));
       while (st.phase === 'playing' && guard++ < 40) {
-        st = applyAction(st, { type: 'play', player: st.turn, card: chooseNormalCard(st, st.turn, true) });
+        st = applyAction(st, { type: 'play', player: st.turn, card: policy(st, st.turn) });
       }
       const r = st.result;
       ev += weights[i] * (r && r.kind !== 'zamgeworfen' ? r.payouts[me] : 0);
@@ -756,7 +765,8 @@ export function chooseStrongBid(s: GameState, me: number, rng: Rng = Math.random
     }
   }
   // Etwas Sicherheitsabstand: lieber ein klares Spiel als ein Glücksspiel.
-  const margin = best && best.kind === 'sauspiel' ? 1.5 : 6;
+  const bm = opts.bidMargin ?? { sauspiel: 1.5, other: 6 };
+  const margin = best && best.kind === 'sauspiel' ? bm.sauspiel : bm.other;
   if (canPass && (best === null || bestEv < margin)) return null;
   return best;
 }
