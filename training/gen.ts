@@ -25,6 +25,7 @@ let samples = 0;
 const feat = new Float32Array(FEATURES);
 const mega = mode ? megaPlayer(mode) : null;
 const SAMPLES = Number(process.env.SAMPLES ?? 48);
+const EXPLORE = Number(process.env.EXPLORE ?? 0);
 
 let m: MatchInfo = newMatch(DEFAULT_RULES);
 const t0 = Date.now();
@@ -35,7 +36,7 @@ for (let g = 0; g < games; g++) {
   }
   const weak = rng() < 0.15 ? Math.floor(rng() * 4) : -1;
   let s: GameState = dealGame(m, rng);
-  const pending: { buf: Buffer; seat: number; stakeAt: () => number }[] = [];
+  const pending: { buf: Buffer; seat: number; stakeAt: () => number; explored?: boolean }[] = [];
   let guard = 0;
   while (s.phase !== 'finished') {
     if (++guard > 200) throw new Error('Endlosschleife');
@@ -48,6 +49,15 @@ for (let g = 0; g < games; g++) {
       let vals: number[] = [];
       const opts = { samples: SAMPLES, rng, onScores: (c: CardId[], v: number[]) => { cards = c; vals = v; } };
       a = mega ? mega(s, p, opts) : chooseStrongAction(s, p, opts);
+      let explored = false;
+      if (a.type === 'play' && cards.length > 1 && rng() < EXPLORE) {
+        // Ausprobieren: gelegentlich eine der anderen guten Karten spielen, damit das Netz
+        // aus echten Ergebnissen lernt, was die Alternativen wert sind.
+        const order = cards.map((c, i) => i).sort((x, y) => vals[y] - vals[x]).filter((i) => cards[i] !== (a as { card: CardId }).card);
+        const pick = order[Math.floor(rng() * Math.min(2, order.length))];
+        a = { type: 'play', player: p, card: cards[pick] };
+        explored = true;
+      }
       if (a.type === 'play' && cards.length) {
         const view = redactFor(s, p);
         encode(view, p, feat);
@@ -64,7 +74,7 @@ for (let g = 0; g < games; g++) {
         o += 128;
         buf[o++] = CARD_INDEX[a.card];
         buf.writeFloatLE(stake, o + 4);
-        pending.push({ buf, seat: p, stakeAt: () => stake });
+        pending.push({ buf, seat: p, stakeAt: () => stake, explored });
       }
     } else {
       a = mega ? mega(s, p, { samples: SAMPLES, rng }) : chooseStrongAction(s, p, { samples: SAMPLES, rng });
@@ -75,7 +85,7 @@ for (let g = 0; g < games; g++) {
   for (const r of pending) {
     const o = FEATURES + 4 + 128 + 1;
     r.buf.writeFloatLE(pay[r.seat] / r.stakeAt(), o);
-    r.buf[o + 8] = r.seat === weak ? 1 : 0;
+    r.buf[o + 8] = r.seat === weak ? 1 : r.explored ? 2 : 0;
     r.buf[o + 9] = m.rules.geier ? 1 : 0;
     chunks.push(r.buf);
     samples++;

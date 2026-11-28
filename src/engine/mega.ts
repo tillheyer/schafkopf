@@ -24,6 +24,10 @@ export interface MegaOptions extends StrongOptions {
   netOnly?: boolean;
   /** Beim Durchspielen die Karten vom Netz wählen lassen statt mit den schnellen Regeln (Standard: ja). */
   netRollouts?: boolean;
+  /** Kontra, wenn das Netz den eigenen Gewinn höher schätzt als dieser Wert (in Spieleinsätzen). */
+  kontraAt?: number;
+  /** Re, wenn das Netz den eigenen Gewinn höher schätzt als dieser Wert. */
+  reAt?: number;
   /** Anderes Netz verwenden (Training). */
   net?: MegaNet;
   /** Kleineres, schnelleres Netz fürs Durchspielen (Training). */
@@ -69,6 +73,13 @@ export function netPolicy(net = megaNet()): (s: GameState, player: number) => Ca
   };
 }
 
+/** Was das Netz für `me` aus dieser Lage noch erwartet, in Spieleinsätzen (+1 = einfach gewonnen). */
+export function netValue(full: GameState, me: number, net = megaNet()): number {
+  return net.run(encode(redactFor(full, me), me)).value;
+}
+
+export const MEGA_BID_MARGIN = { sauspiel: 3, other: 10 };
+
 export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions = {}): Action {
   const net = opts.net ?? megaNet();
   if (full.phase === 'playing' && full.turn === me) {
@@ -91,5 +102,11 @@ export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions 
     return values.map((v, i) => (1 - mix) * v + mix * nn[i]);
   };
   const rolloutPolicy = opts.netRollouts !== false ? netPolicy(opts.rolloutNet ?? (opts.net ? net : megaRolloutNet())) : opts.rolloutPolicy;
-  return chooseStrongAction(full, me, { ...opts, adjust, rolloutPolicy });
+  // Reizen: das Netz spielt die möglichen Spiele durch; dafür etwas mehr Sicherheitsabstand
+  // (in Testspielen besser als die Werte von "Sehr stark").
+  const bidMargin = opts.bidMargin ?? MEGA_BID_MARGIN;
+  // Kontra/Re per Netz-Einschätzung nur auf Wunsch: in Testspielen war das schlechter als die Regeln.
+  const kontra = opts.kontra ?? (opts.kontraAt !== undefined ? (st: GameState, p: number) => netValue(st, p, net) > opts.kontraAt! : undefined);
+  const re = opts.re ?? (opts.reAt !== undefined ? (st: GameState, p: number) => netValue(st, p, net) > opts.reAt! : undefined);
+  return chooseStrongAction(full, me, { ...opts, adjust, rolloutPolicy, bidMargin, kontra, re });
 }
