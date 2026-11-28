@@ -78,8 +78,7 @@ export function netValue(full: GameState, me: number, net = megaNet()): number {
   return net.run(encode(redactFor(full, me), me)).value;
 }
 
-export const KONTRA_AT = 0.3;
-export const RE_AT = 0.3;
+export const MEGA_BID_MARGIN = { sauspiel: 3, other: 10 };
 
 export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions = {}): Action {
   const net = opts.net ?? megaNet();
@@ -103,13 +102,11 @@ export function chooseMegaAction(full: GameState, me: number, opts: MegaOptions 
     return values.map((v, i) => (1 - mix) * v + mix * nn[i]);
   };
   const rolloutPolicy = opts.netRollouts !== false ? netPolicy(opts.rolloutNet ?? (opts.net ? net : megaRolloutNet())) : opts.rolloutPolicy;
-  const kontraAt = opts.kontraAt ?? KONTRA_AT;
-  const reAt = opts.reAt ?? RE_AT;
-  return chooseStrongAction(full, me, {
-    ...opts,
-    adjust,
-    rolloutPolicy,
-    kontra: opts.kontra ?? ((st, p) => netValue(st, p, net) > kontraAt),
-    re: opts.re ?? ((st, p) => netValue(st, p, net) > reAt),
-  });
+  // Reizen: das Netz spielt die möglichen Spiele durch; dafür etwas mehr Sicherheitsabstand
+  // (in Testspielen besser als die Werte von "Sehr stark").
+  const bidMargin = opts.bidMargin ?? MEGA_BID_MARGIN;
+  // Kontra/Re per Netz-Einschätzung nur auf Wunsch: in Testspielen war das schlechter als die Regeln.
+  const kontra = opts.kontra ?? (opts.kontraAt !== undefined ? (st: GameState, p: number) => netValue(st, p, net) > opts.kontraAt! : undefined);
+  const re = opts.re ?? (opts.reAt !== undefined ? (st: GameState, p: number) => netValue(st, p, net) > opts.reAt! : undefined);
+  return chooseStrongAction(full, me, { ...opts, adjust, rolloutPolicy, bidMargin, kontra, re });
 }

@@ -654,8 +654,7 @@ function estimate(s: GameState, me: number, rng: Rng, opts: StrongOptions): { ev
     let st = w.state;
     let guard = 0;
     while (st.phase === 'playing' && guard++ < 40) {
-      const card = opts.rolloutPolicy ? opts.rolloutPolicy(st, st.turn) : chooseNormalCard(st, st.turn, true);
-      st = applyAction(st, { type: 'play', player: st.turn, card });
+      st = applyAction(st, { type: 'play', player: st.turn, card: chooseNormalCard(st, st.turn, true) });
     }
     const u = utility(st, me);
     ev += u;

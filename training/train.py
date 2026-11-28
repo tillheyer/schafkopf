@@ -22,8 +22,8 @@ def load(paths):
     z = raw[:, o:o + 4].copy().view('<f4').reshape(-1); o += 4
     stake = raw[:, o:o + 4].copy().view('<f4').reshape(-1); o += 4
     weak = raw[:, o]
-    keep = weak == 0  # nur Entscheidungen des starken Computers nachahmen
-    return x[keep], mask[keep], q[keep], chosen[keep], z[keep]
+    keep = weak != 1  # Züge des schwachen Computers weglassen
+    return x[keep], mask[keep], q[keep], chosen[keep], z[keep], (weak[keep] == 2)
 
 class Net(nn.Module):
     def __init__(self, H1=H1, H2=H2):
@@ -45,18 +45,19 @@ def main():
     ap.add_argument('--init')
     ap.add_argument('--epochs', type=int, default=12)
     ap.add_argument('--lr', type=float, default=2e-3)
+    ap.add_argument('--zw', type=float, default=0.0)
     ap.add_argument('--h1', type=int, default=H1)
     ap.add_argument('--h2', type=int, default=H2)
     a = ap.parse_args()
     torch.manual_seed(0)
-    x, mask, q, chosen, z = load(a.data)
+    x, mask, q, chosen, z, explored = load(a.data)
     n = len(x)
     print(f'{n} Beispiele', flush=True)
     perm = np.random.default_rng(0).permutation(n)
     nval = min(20000, n // 10)
     val, tr = perm[:nval], perm[nval:]
     X = torch.tensor(x); M = torch.tensor(mask); Q = torch.tensor(np.nan_to_num(q, nan=0.0))
-    QM = torch.tensor(~np.isnan(q)); C = torch.tensor(chosen); Z = torch.tensor(z)
+    QM = torch.tensor(~np.isnan(q)); C = torch.tensor(chosen); Z = torch.tensor(z); EX = torch.tensor(explored)
     net = Net(a.h1, a.h2)
     if a.init:
         net.load_state_dict(torch.load(a.init))
@@ -66,11 +67,16 @@ def main():
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=steps)
 
     def losses(idx):
-        xb, mb, qb, qm, cb, zb = X[idx], M[idx], Q[idx], QM[idx], C[idx], Z[idx]
+        xb, mb, qb, qm, cb, zb, eb = X[idx], M[idx], Q[idx], QM[idx], C[idx], Z[idx], EX[idx]
         qp, logit, v = net(xb)
         lq = (F.smooth_l1_loss(qp, qb, reduction='none', beta=0.5) * qm).sum() / qm.sum()
+        if a.zw > 0:
+            # Echte Ergebnisse: der Wert der gespielten Karte soll das tatsächliche Endergebnis treffen.
+            qc = qp.gather(1, cb[:, None]).squeeze(1)
+            lq = lq + a.zw * F.smooth_l1_loss(qc, zb, beta=1.0)
         logit = logit.masked_fill(~mb, -1e9)
-        lpi = F.cross_entropy(logit, cb)
+        keep = ~eb
+        lpi = F.cross_entropy(logit[keep], cb[keep]) if keep.any() else logit.sum() * 0
         lv = F.smooth_l1_loss(v, zb, beta=1.0)
         # Wie oft wählt das Netz (Q-Kopf / Policy) dieselbe Karte wie der starke Computer?
         acc_q = (qp.masked_fill(~mb, -1e9).argmax(1) == cb).float().mean()
